@@ -74,8 +74,6 @@ static DWORD CALLBACK device_thread( void *arg )
 
     TRACE( "starting process %lx\n", GetCurrentProcessId() );
 
-    if (ANDROID_CALL( java_init, NULL )) return 0;  /* not running under Java */
-
     RtlInitUnicodeString( &nameW, driver_nameW );
     if ((status = IoCreateDriver( &nameW, init_android_driver )))
     {
@@ -86,10 +84,7 @@ static DWORD CALLBACK device_thread( void *arg )
     stop_event = CreateEventW( NULL, TRUE, FALSE, NULL );
     SetEvent( start_event );
 
-    ret = wine_ntoskrnl_main_loop( stop_event );
-
-    ANDROID_CALL( java_uninit, NULL );
-    return ret;
+    return wine_ntoskrnl_main_loop( stop_event );
 }
 
 static NTSTATUS WINAPI android_start_device(void *param, ULONG size)
@@ -119,7 +114,7 @@ BOOL WINAPI DllMain( HINSTANCE inst, DWORD reason, LPVOID reserved )
     struct init_params params;
     void **callback_table;
 
-    if (reason == DLL_PROCESS_ATTACH) return TRUE;
+    if (reason != DLL_PROCESS_ATTACH) return TRUE;
 
     DisableThreadLibraryCalls( inst );
     if (__wine_init_unix_call()) return FALSE;

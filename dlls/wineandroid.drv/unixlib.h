@@ -23,8 +23,6 @@ enum android_funcs
 {
     unix_dispatch_ioctl,
     unix_init,
-    unix_java_init,
-    unix_java_uninit,
     unix_register_window,
     unix_funcs_count
 };
