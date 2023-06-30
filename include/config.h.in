@@ -6,6 +6,9 @@
 /* Define to the file extension for executables. */
 #undef EXEEXT
 
+/* Define to 1 if you have the <adrenotools/driver.h> header file. */
+#undef HAVE_ADRENOTOOLS_DRIVER_H
+
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #undef HAVE_ARPA_INET_H
 
@@ -723,9 +726,6 @@
 /* Define to the soname of the libdbus-1 library. */
 #undef SONAME_LIBDBUS_1
 
-/* Define to the soname of the libEGL library. */
-#undef SONAME_LIBEGL
-
 /* Define to the soname of the libfontconfig library. */
 #undef SONAME_LIBFONTCONFIG
 
@@ -734,9 +734,6 @@
 
 /* Define to the soname of the libGL library. */
 #undef SONAME_LIBGL
-
-/* Define to the soname of the libGLESv2 library. */
-#undef SONAME_LIBGLESV2
 
 /* Define to the soname of the libgnutls library. */
 #undef SONAME_LIBGNUTLS
