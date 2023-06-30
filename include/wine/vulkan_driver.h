@@ -13,7 +13,7 @@
 #define __WINE_VULKAN_DRIVER_H
 
 /* Wine internal vulkan driver version, needs to be bumped upon vulkan_funcs changes. */
-#define WINE_VULKAN_DRIVER_VERSION 11
+#define WINE_VULKAN_DRIVER_VERSION 12
 
 struct vulkan_funcs
 {
@@ -21,6 +21,9 @@ struct vulkan_funcs
      * needs to provide. Other function calls will be provided indirectly by dispatch
      * tables part of dispatchable Vulkan objects such as VkInstance or vkDevice.
      */
+    VkResult (*p_vkAcquireNextImage2KHR)(VkDevice, const VkAcquireNextImageInfoKHR *, uint32_t *);
+    VkResult (*p_vkAcquireNextImageKHR)(VkDevice, VkSwapchainKHR, uint64_t, VkSemaphore, VkFence, uint32_t *);
+    VkResult (*p_vkCreateDevice)(VkPhysicalDevice, const VkDeviceCreateInfo *, const VkAllocationCallbacks *, VkDevice *);
     VkResult (*p_vkCreateInstance)(const VkInstanceCreateInfo *, const VkAllocationCallbacks *, VkInstance *);
     VkResult (*p_vkCreateSwapchainKHR)(VkDevice, const VkSwapchainCreateInfoKHR *, const VkAllocationCallbacks *, VkSwapchainKHR *);
     VkResult (*p_vkCreateWin32SurfaceKHR)(VkInstance, const VkWin32SurfaceCreateInfoKHR *, const VkAllocationCallbacks *, VkSurfaceKHR *);
@@ -28,6 +31,7 @@ struct vulkan_funcs
     void (*p_vkDestroySurfaceKHR)(VkInstance, VkSurfaceKHR, const VkAllocationCallbacks *);
     void (*p_vkDestroySwapchainKHR)(VkDevice, VkSwapchainKHR, const VkAllocationCallbacks *);
     VkResult (*p_vkEnumerateInstanceExtensionProperties)(const char *, uint32_t *, VkExtensionProperties *);
+    VkResult (*p_vkGetDeviceGroupPresentCapabilitiesKHR)(VkDevice, VkDeviceGroupPresentCapabilitiesKHR *);
     VkResult (*p_vkGetDeviceGroupSurfacePresentModesKHR)(VkDevice, VkSurfaceKHR, VkDeviceGroupPresentModeFlagsKHR *);
     void * (*p_vkGetDeviceProcAddr)(VkDevice, const char *);
     void * (*p_vkGetInstanceProcAddr)(VkInstance, const char *);
@@ -44,6 +48,7 @@ struct vulkan_funcs
 
     /* winevulkan specific functions */
     VkSurfaceKHR (*p_wine_get_native_surface)(VkSurfaceKHR);
+    void *(*p_wine_get_adrenotools_mapping_handle)(void);
 };
 
 extern const struct vulkan_funcs * __wine_get_vulkan_driver(UINT version);
@@ -55,10 +60,16 @@ static inline void *get_vulkan_driver_device_proc_addr(
 
     name += 2;
 
+    if (!strcmp(name, "AcquireNextImage2KHR"))
+        return vulkan_funcs->p_vkAcquireNextImage2KHR;
+    if (!strcmp(name, "AcquireNextImageKHR"))
+        return vulkan_funcs->p_vkAcquireNextImageKHR;
     if (!strcmp(name, "CreateSwapchainKHR"))
         return vulkan_funcs->p_vkCreateSwapchainKHR;
     if (!strcmp(name, "DestroySwapchainKHR"))
         return vulkan_funcs->p_vkDestroySwapchainKHR;
+    if (!strcmp(name, "GetDeviceGroupPresentCapabilitiesKHR"))
+        return vulkan_funcs->p_vkGetDeviceGroupPresentCapabilitiesKHR;
     if (!strcmp(name, "GetDeviceGroupSurfacePresentModesKHR"))
         return vulkan_funcs->p_vkGetDeviceGroupSurfacePresentModesKHR;
     if (!strcmp(name, "GetDeviceProcAddr"))
@@ -85,6 +96,8 @@ static inline void *get_vulkan_driver_instance_proc_addr(
 
     if (!instance) return NULL;
 
+    if (!strcmp(name, "CreateDevice"))
+        return vulkan_funcs->p_vkCreateDevice;
     if (!strcmp(name, "CreateWin32SurfaceKHR"))
         return vulkan_funcs->p_vkCreateWin32SurfaceKHR;
     if (!strcmp(name, "DestroyInstance"))
