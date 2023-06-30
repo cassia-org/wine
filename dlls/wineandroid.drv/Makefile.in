@@ -1,7 +1,7 @@
-MODULE    = wineandroid.drv
-UNIXLIB   = wineandroid.so
-IMPORTS   = ntoskrnl
-UNIX_LIBS = -lwin32u $(PTHREAD_LIBS)
+MODULE      = wineandroid.drv
+UNIXLIB     = wineandroid.so
+IMPORTS     = ntoskrnl
+UNIX_LIBS   = -lwin32u -landroid -lsync $(PTHREAD_LIBS)
 
 C_SRCS = \
 	dllmain.c \
