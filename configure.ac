@@ -737,9 +737,9 @@ case $host_os in
     WINE_TRY_CFLAGS([-Wl,-z,defs],[UNIXLDFLAGS="$UNIXLDFLAGS -Wl,-z,defs"])
     WINE_TRY_CFLAGS([-fPIC -Wl,--export-dynamic],[WINELOADER_LDFLAGS="-Wl,--export-dynamic"])
     WINEPRELOADER_LDFLAGS="-static -nostartfiles -nodefaultlibs -Wl,-Ttext=0x7d400000"
-
-    WINE_CHECK_SONAME(EGL,eglGetProcAddress)
-    WINE_CHECK_SONAME(GLESv2,glFlush)
+    WINE_PACKAGE_FLAGS(ADRENOTOOLS,[adrenotools],,,,
+        [AC_CHECK_HEADERS([adrenotools/driver.h])
+         AC_CHECK_LIB(adrenotools,adrenotools_open_libvulkan,[:],[ADRENOTOOLS_LIBS=""],[$ADRENOTOOLS_LIBS])])
 
     if test "x$exec_prefix" = xNONE
     then

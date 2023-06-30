@@ -34,6 +34,7 @@
 #include <string.h>
 #include <android/hardware_buffer.h>
 #include <android/sync.h>
+#include <adrenotools/driver.h>
 
 #include "windef.h"
 #include "winbase.h"
@@ -135,8 +136,25 @@ static void *adrenotools_mapping_handle;
 
 static void wine_vk_init(void)
 {
+    char *hook_lib_dir = getenv("ADRENOTOOLS_HOOK_LIB_DIR");
+    char *custom_driver_dir = getenv("ADRENOTOOLS_CUSTOM_DRIVER_DIR");
+    char *custom_driver_name = getenv("ADRENOTOOLS_CUSTOM_DRIVER_NAME");
+    char *file_redirect_dir = getenv("ADRENOTOOLS_FILE_REDIRECT_DIR");
+    int adrenotools_flags = ADRENOTOOLS_DRIVER_GPU_MAPPING_IMPORT;
+    if (file_redirect_dir)
+        adrenotools_flags |= ADRENOTOOLS_DRIVER_FILE_REDIRECT;
+
+    if (custom_driver_dir)
+        adrenotools_flags |= ADRENOTOOLS_DRIVER_CUSTOM;
+
+    if (hook_lib_dir)
+        vulkan_handle = adrenotools_open_libvulkan(RTLD_NOW, adrenotools_flags, NULL, hook_lib_dir,
+                                                   custom_driver_dir, custom_driver_name, file_redirect_dir, &adrenotools_mapping_handle);
+    else
+        WARN("ADRENOTOOLS_HOOK_LIB_DIR is not set! adrenotools will not be used");
 
     if (!vulkan_handle) {
+        ERR("Failed to load adrenotools: %s.\n", strerror(errno));
         if (!(vulkan_handle = dlopen(SONAME_LIBVULKAN, RTLD_NOW)))
         {
             ERR("Failed to load %s.\n", SONAME_LIBVULKAN);
