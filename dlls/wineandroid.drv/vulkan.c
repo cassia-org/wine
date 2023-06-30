@@ -30,12 +30,18 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <dlfcn.h>
+#include <errno.h>
+#include <string.h>
+#include <android/hardware_buffer.h>
+#include <android/sync.h>
 
 #include "windef.h"
 #include "winbase.h"
 
 #include "wine/debug.h"
 #include "android.h"
+
+#include "ipc_client.h"
 
 #define VK_NO_PROTOTYPES
 #define WINE_VK_HOST
@@ -45,62 +51,123 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(vulkan);
 #ifdef SONAME_LIBVULKAN
-WINE_DECLARE_DEBUG_CHANNEL(fps);
+
+#define VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID 0x00000400
+
+#define VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID 1000129003
+
+typedef struct VkImportAndroidHardwareBufferInfoANDROID {
+    VkStructureType            sType;
+    const void*                pNext;
+    struct AHardwareBuffer*    buffer;
+} VkImportAndroidHardwareBufferInfoANDROID;
+
+#define VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR 1000079000
+
+typedef struct VkImportSemaphoreFdInfoKHR {
+    VkStructureType                          sType;
+    const void*                              pNext;
+    VkSemaphore                              semaphore;
+    VkSemaphoreImportFlags                   flags;
+    VkExternalSemaphoreHandleTypeFlagBits    handleType;
+    int                                      fd;
+} VkImportSemaphoreFdInfoKHR;
+
+#define VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR 1000079001
+
+typedef struct VkSemaphoreGetFdInfoKHR {
+    VkStructureType                          sType;
+    const void*                              pNext;
+    VkSemaphore                              semaphore;
+    VkExternalSemaphoreHandleTypeFlagBits    handleType;
+} VkSemaphoreGetFdInfoKHR;
+
+#define VK_STRUCTURE_TYPE_IMPORT_FENCE_FD_INFO_KHR 1000115000
+
+typedef struct VkImportFenceFdInfoKHR {
+    VkStructureType                      sType;
+    const void*                          pNext;
+    VkFence                              fence;
+    VkFenceImportFlags                   flags;
+    VkExternalFenceHandleTypeFlagBits    handleType;
+    int                                  fd;
+} VkImportFenceFdInfoKHR;
+
+struct wine_vk_surface {
+    HWND hwnd;
+};
+
+struct wine_vk_swapchain {
+    cassia_compositor_swapchain_handle cassia_handle;
+    unsigned int image_count;
+    AHardwareBuffer **hardware_buffers;
+    VkImage *images;
+    VkDeviceMemory *image_memory;
+};
+
+static pthread_mutex_t cassia_wsi_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int cassia_wsi_socket = -1;
 
 static VkResult (*pvkCreateInstance)(const VkInstanceCreateInfo *, const VkAllocationCallbacks *, VkInstance *);
-static VkResult (*pvkCreateSwapchainKHR)(VkDevice, const VkSwapchainCreateInfoKHR *, const VkAllocationCallbacks *, VkSwapchainKHR *);
 static void (*pvkDestroyInstance)(VkInstance, const VkAllocationCallbacks *);
-static void (*pvkDestroySurfaceKHR)(VkInstance, VkSurfaceKHR, const VkAllocationCallbacks *);
-static void (*pvkDestroySwapchainKHR)(VkDevice, VkSwapchainKHR, const VkAllocationCallbacks *);
 static VkResult (*pvkEnumerateInstanceExtensionProperties)(const char *, uint32_t *, VkExtensionProperties *);
-static VkResult (*pvkGetDeviceGroupSurfacePresentModesKHR)(VkDevice, VkSurfaceKHR, VkDeviceGroupPresentModeFlagsKHR *);
+static VkResult (*pvkCreateDevice)(VkPhysicalDevice, const VkDeviceCreateInfo *, const VkAllocationCallbacks *, VkDevice *);
 static void * (*pvkGetDeviceProcAddr)(VkDevice, const char *);
 static void * (*pvkGetInstanceProcAddr)(VkInstance, const char *);
-static VkResult (*pvkGetPhysicalDevicePresentRectanglesKHR)(VkPhysicalDevice, VkSurfaceKHR, uint32_t *, VkRect2D *);
-static VkResult (*pvkGetPhysicalDeviceSurfaceCapabilities2KHR)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR *, VkSurfaceCapabilities2KHR *);
-static VkResult (*pvkGetPhysicalDeviceSurfaceCapabilitiesKHR)(VkPhysicalDevice, VkSurfaceKHR, VkSurfaceCapabilitiesKHR *);
-static VkResult (*pvkGetPhysicalDeviceSurfaceFormats2KHR)(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR *, uint32_t *, VkSurfaceFormat2KHR *);
-static VkResult (*pvkGetPhysicalDeviceSurfaceFormatsKHR)(VkPhysicalDevice, VkSurfaceKHR, uint32_t *, VkSurfaceFormatKHR *);
-static VkResult (*pvkGetPhysicalDeviceSurfacePresentModesKHR)(VkPhysicalDevice, VkSurfaceKHR, uint32_t *, VkPresentModeKHR *);
-static VkResult (*pvkGetPhysicalDeviceSurfaceSupportKHR)(VkPhysicalDevice, uint32_t, VkSurfaceKHR, VkBool32 *);
-static VkResult (*pvkGetSwapchainImagesKHR)(VkDevice, VkSwapchainKHR, uint32_t *, VkImage *);
-static VkResult (*pvkQueuePresentKHR)(VkQueue, const VkPresentInfoKHR *);
+static VkResult (*pvkCreateImage)(VkDevice, const VkImageCreateInfo *, const VkAllocationCallbacks *, VkImage *);
+static void (*pvkGetImageMemoryRequirements)(VkDevice, VkImage, VkMemoryRequirements *);
+static VkResult (*pvkAllocateMemory)(VkDevice, const VkMemoryAllocateInfo *, const VkAllocationCallbacks *, VkDeviceMemory *);
+static VkResult (*pvkBindImageMemory)(VkDevice, VkImage, VkDeviceMemory, VkDeviceSize);
+static void (*pvkFreeMemory)(VkDevice, VkDeviceMemory, const VkAllocationCallbacks *);
+static void (*pvkDestroyImage)(VkDevice, VkImage, const VkAllocationCallbacks *);
+
+static pthread_mutex_t vk_device_funcs_init_mutex = PTHREAD_MUTEX_INITIALIZER;
+static bool vk_device_funcs_initialised = false;
+static VkResult (*pvkImportSemaphoreFdKHR)(VkDevice, const VkImportSemaphoreFdInfoKHR *);
+static VkResult (*pvkGetSemaphoreFdKHR)(VkDevice, const VkSemaphoreGetFdInfoKHR *, int *);
+static VkResult (*pvkImportFenceFdKHR)(VkDevice, const VkImportFenceFdInfoKHR *);
 
 static void *ANDROID_get_vk_device_proc_addr(const char *name);
 static void *ANDROID_get_vk_instance_proc_addr(VkInstance instance, const char *name);
 
 static void *vulkan_handle;
+static void *adrenotools_mapping_handle;
 
 static void wine_vk_init(void)
 {
-    if (!(vulkan_handle = dlopen(SONAME_LIBVULKAN, RTLD_NOW)))
-    {
-        ERR("Failed to load %s.\n", SONAME_LIBVULKAN);
-        return;
+
+    if (!vulkan_handle) {
+        if (!(vulkan_handle = dlopen(SONAME_LIBVULKAN, RTLD_NOW)))
+        {
+            ERR("Failed to load %s.\n", SONAME_LIBVULKAN);
+            return;
+        }
     }
 
 #define LOAD_FUNCPTR(f) if (!(p##f = dlsym(vulkan_handle, #f))) goto fail
 #define LOAD_OPTIONAL_FUNCPTR(f) p##f = dlsym(vulkan_handle, #f)
     LOAD_FUNCPTR(vkCreateInstance);
-    LOAD_FUNCPTR(vkCreateSwapchainKHR);
     LOAD_FUNCPTR(vkDestroyInstance);
-    LOAD_FUNCPTR(vkDestroySurfaceKHR);
-    LOAD_FUNCPTR(vkDestroySwapchainKHR);
     LOAD_FUNCPTR(vkEnumerateInstanceExtensionProperties);
+    LOAD_FUNCPTR(vkCreateDevice);
     LOAD_FUNCPTR(vkGetDeviceProcAddr);
     LOAD_FUNCPTR(vkGetInstanceProcAddr);
-    LOAD_OPTIONAL_FUNCPTR(vkGetPhysicalDeviceSurfaceCapabilities2KHR);
-    LOAD_FUNCPTR(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
-    LOAD_OPTIONAL_FUNCPTR(vkGetPhysicalDeviceSurfaceFormats2KHR);
-    LOAD_FUNCPTR(vkGetPhysicalDeviceSurfaceFormatsKHR);
-    LOAD_FUNCPTR(vkGetPhysicalDeviceSurfacePresentModesKHR);
-    LOAD_FUNCPTR(vkGetPhysicalDeviceSurfaceSupportKHR);
-    LOAD_FUNCPTR(vkGetSwapchainImagesKHR);
-    LOAD_FUNCPTR(vkQueuePresentKHR);
-    LOAD_OPTIONAL_FUNCPTR(vkGetDeviceGroupSurfacePresentModesKHR);
-    LOAD_OPTIONAL_FUNCPTR(vkGetPhysicalDevicePresentRectanglesKHR);
+    LOAD_FUNCPTR(vkCreateImage);
+    LOAD_FUNCPTR(vkGetImageMemoryRequirements);
+    LOAD_FUNCPTR(vkAllocateMemory);
+    LOAD_FUNCPTR(vkBindImageMemory);
+    LOAD_FUNCPTR(vkFreeMemory);
+    LOAD_FUNCPTR(vkDestroyImage);
 #undef LOAD_FUNCPTR
 #undef LOAD_OPTIONAL_FUNCPTR
+
+    cassia_wsi_socket = cassiaclt_connect();
+    if (cassia_wsi_socket == -1)
+    {
+        ERR("Could not connect to cassia server\n");
+        goto fail;
+    }
+
     return;
 
 fail:
@@ -108,7 +175,166 @@ fail:
     vulkan_handle = NULL;
 }
 
+static void wine_vk_device_funcs_init(VkDevice device)
+{
+    if (vk_device_funcs_initialised)
+        return;
+
+    pthread_mutex_lock(&vk_device_funcs_init_mutex);
+    if (vk_device_funcs_initialised)
+        return;
+
+    pvkImportSemaphoreFdKHR = pvkGetDeviceProcAddr(device, "vkImportSemaphoreFdKHR");
+    pvkGetSemaphoreFdKHR = pvkGetDeviceProcAddr(device, "vkGetSemaphoreFdKHR");
+    pvkImportFenceFdKHR = pvkGetDeviceProcAddr(device, "vkImportFenceFdKHR");
+
+    vk_device_funcs_initialised = true;
+    pthread_mutex_unlock(&vk_device_funcs_init_mutex);
+
+    if (!pvkImportSemaphoreFdKHR || !pvkGetSemaphoreFdKHR || !pvkImportFenceFdKHR)
+        ERR("Failed to load external semaphore/fence functions\n");
+}
+
+static VkResult ANDROID_vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR *acquire_info,
+     uint32_t *image_index) {
+    struct wine_vk_swapchain *wine_swapchain = (struct wine_vk_swapchain *)acquire_info->swapchain;
+    VkResult result;
+    int fence_fd;
+    bool ret;
+    VkImportSemaphoreFdInfoKHR semaphoreImportInfo;
+    VkImportFenceFdInfoKHR fenceImportInfo;
+
+    TRACE("%p %p %p\n", device, acquire_info, image_index);
+
+    if (acquire_info->pNext)
+    {
+        ERR("Unsupported pNext");
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    pthread_mutex_lock(&cassia_wsi_mutex);
+    ret = cassiaclt_compositor_command_dequeue(cassia_wsi_socket, wine_swapchain->cassia_handle,
+                                               acquire_info->timeout, &result, image_index, &fence_fd);
+    pthread_mutex_unlock(&cassia_wsi_mutex);
+
+    if (!ret)
+    {
+        ERR("Lost connection to cassia server!\n");
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+
+    if (result != VK_SUCCESS)
+        return result;
+
+    wine_vk_device_funcs_init(device);
+
+    if (acquire_info->semaphore) {
+        semaphoreImportInfo.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
+        semaphoreImportInfo.pNext = NULL;
+        semaphoreImportInfo.semaphore = acquire_info->semaphore;
+        semaphoreImportInfo.flags = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT;
+        semaphoreImportInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+        semaphoreImportInfo.fd = dup(fence_fd);
+        result = pvkImportSemaphoreFdKHR(device, &semaphoreImportInfo);
+        if (result != VK_SUCCESS)
+            goto end;
+    }
+
+
+    if (acquire_info->fence) {
+        fenceImportInfo.sType = VK_STRUCTURE_TYPE_IMPORT_FENCE_FD_INFO_KHR;
+        fenceImportInfo.pNext = NULL;
+        fenceImportInfo.fence = acquire_info->fence;
+        fenceImportInfo.flags = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT;
+        fenceImportInfo.handleType = VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT;
+        fenceImportInfo.fd = dup(fence_fd);
+        result = pvkImportFenceFdKHR(device, &fenceImportInfo);
+    }
+
+end:
+    close(fence_fd);
+    return result;
+}
+
+static VkResult ANDROID_vkAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout,
+     VkSemaphore semaphore, VkFence fence, uint32_t *image_index) {
+    VkAcquireNextImageInfoKHR acquire_info;
+    acquire_info.sType = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
+    acquire_info.pNext = NULL;
+    acquire_info.swapchain = swapchain;
+    acquire_info.timeout = timeout;
+    acquire_info.semaphore = semaphore;
+    acquire_info.fence = fence;
+    acquire_info.deviceMask = 1;
+
+    return ANDROID_vkAcquireNextImage2KHR(device, &acquire_info, image_index);
+}
+
 /* Helper function for converting between win32 and X11 compatible VkInstanceCreateInfo.
+ * Caller is responsible for allocation and cleanup of 'dst'.
+ */
+static VkResult wine_vk_device_convert_create_info(const VkDeviceCreateInfo *src,
+        VkDeviceCreateInfo *dst)
+{
+    const char **enabled_extensions = NULL;
+
+    memcpy(dst, src, sizeof(VkDeviceCreateInfo));
+
+    if (src->enabledExtensionCount > 0)
+    {
+        dst->ppEnabledExtensionNames = NULL;
+        dst->enabledExtensionCount = src->enabledExtensionCount + 6;
+
+        enabled_extensions = calloc(dst->enabledExtensionCount,
+                                    sizeof(*dst->ppEnabledExtensionNames));
+        if (!enabled_extensions)
+        {
+            ERR("Failed to allocate memory for enabled extensions\n");
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+
+        memcpy(enabled_extensions, src->ppEnabledExtensionNames,
+               sizeof(*src->ppEnabledExtensionNames) * src->enabledExtensionCount);
+
+        enabled_extensions[src->enabledExtensionCount + 0] = "VK_ANDROID_external_memory_android_hardware_buffer";
+        enabled_extensions[src->enabledExtensionCount + 1] = "VK_KHR_external_semaphore";
+        enabled_extensions[src->enabledExtensionCount + 2] = "VK_KHR_external_semaphore_fd";
+        enabled_extensions[src->enabledExtensionCount + 3] = "VK_KHR_external_fence";
+        enabled_extensions[src->enabledExtensionCount + 4] = "VK_KHR_external_fence_fd";
+        enabled_extensions[src->enabledExtensionCount + 5] = "VK_KHR_external_memory";
+
+        dst->ppEnabledExtensionNames = enabled_extensions;
+    }
+
+    return VK_SUCCESS;
+}
+
+
+static VkResult ANDROID_vkCreateDevice(VkPhysicalDevice physical_device, const VkDeviceCreateInfo *create_info,
+     const VkAllocationCallbacks *allocator, VkDevice *device)
+{
+    VkDeviceCreateInfo create_info_host;
+    VkResult res;
+    TRACE("create_info %p, allocator %p, device %p\n", create_info, allocator, device);
+
+    if (allocator)
+        FIXME("Support for allocation callbacks not implemented yet\n");
+
+    res = wine_vk_device_convert_create_info(create_info, &create_info_host);
+    if (res != VK_SUCCESS)
+    {
+        ERR("Failed to convert device create info, res=%d\n", res);
+        return res;
+    }
+
+    res = pvkCreateDevice(physical_device, &create_info_host, NULL /* allocator */, device);
+
+    free((void *)create_info_host.ppEnabledExtensionNames);
+    return res;
+}
+
+/* Helper function for converting between win32 and android compatible VkInstanceCreateInfo.
  * Caller is responsible for allocation and cleanup of 'dst'.
  */
 static VkResult wine_vk_instance_convert_create_info(const VkInstanceCreateInfo *src,
@@ -116,6 +342,7 @@ static VkResult wine_vk_instance_convert_create_info(const VkInstanceCreateInfo 
 {
     unsigned int i;
     const char **enabled_extensions = NULL;
+    int win32_surface_idx = -1;
 
     dst->sType = src->sType;
     dst->flags = src->flags;
@@ -128,25 +355,30 @@ static VkResult wine_vk_instance_convert_create_info(const VkInstanceCreateInfo 
 
     if (src->enabledExtensionCount > 0)
     {
-        enabled_extensions = calloc(src->enabledExtensionCount, sizeof(*src->ppEnabledExtensionNames));
+        for (i = 0; i < src->enabledExtensionCount; i++)
+            if (!strcmp(src->ppEnabledExtensionNames[i], "VK_KHR_win32_surface"))
+                win32_surface_idx = i;
+
+        dst->enabledExtensionCount = src->enabledExtensionCount + win32_surface_idx == -1 ? 0 : 2;
+
+        enabled_extensions = calloc(dst->enabledExtensionCount,
+                                    sizeof(*src->ppEnabledExtensionNames));
         if (!enabled_extensions)
         {
             ERR("Failed to allocate memory for enabled extensions\n");
             return VK_ERROR_OUT_OF_HOST_MEMORY;
         }
 
-        for (i = 0; i < src->enabledExtensionCount; i++)
+        memcpy(enabled_extensions, src->ppEnabledExtensionNames,
+               sizeof(*src->ppEnabledExtensionNames) * src->enabledExtensionCount);
+
+        if (win32_surface_idx != -1)
         {
-            if (!strcmp(src->ppEnabledExtensionNames[i], "VK_KHR_win32_surface"))
-            {
-                enabled_extensions[i] = "VK_KHR_android_surface";
-            }
-            else
-            {
-                enabled_extensions[i] = src->ppEnabledExtensionNames[i];
-            }
+            enabled_extensions[win32_surface_idx] = "VK_KHR_external_memory_capabilities";
+            enabled_extensions[src->enabledExtensionCount] = "VK_KHR_external_semaphore_capabilities";
+            enabled_extensions[src->enabledExtensionCount + 1] = "VK_KHR_external_fence_capabilities";
         }
-        dst->enabledExtensionCount = src->enabledExtensionCount;
+
         dst->ppEnabledExtensionNames = enabled_extensions;
     }
 
@@ -159,15 +391,11 @@ static VkResult ANDROID_vkCreateInstance(const VkInstanceCreateInfo *create_info
 {
     VkInstanceCreateInfo create_info_host;
     VkResult res;
-    TRACE("create_info %p, allocator %p, instance %p %x\n", create_info, allocator, instance);
+    TRACE("create_info %p, allocator %p, instance %p %p\n", create_info, allocator, instance, pvkCreateInstance);
 
     if (allocator)
         FIXME("Support for allocation callbacks not implemented yet\n");
 
-    /* Perform a second pass on converting VkInstanceCreateInfo. Winevulkan
-     * performed a first pass in which it handles everything except for WSI
-     * functionality such as VK_KHR_win32_surface. Handle this now.
-     */
     res = wine_vk_instance_convert_create_info(create_info, &create_info_host);
     if (res != VK_SUCCESS)
     {
@@ -181,27 +409,134 @@ static VkResult ANDROID_vkCreateInstance(const VkInstanceCreateInfo *create_info
     return res;
 }
 
+static void ANDROID_vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
+        const VkAllocationCallbacks *allocator);
+
 static VkResult ANDROID_vkCreateSwapchainKHR(VkDevice device,
         const VkSwapchainCreateInfoKHR *create_info,
         const VkAllocationCallbacks *allocator, VkSwapchainKHR *swapchain)
 {
-    VkSwapchainCreateInfoKHR create_info_host;
-    TRACE("%p %p %p %p\n", device, create_info, allocator, swapchain);
+    VkResult result = VK_SUCCESS;
+    struct wine_vk_swapchain *wine_swapchain = NULL;
+    VkImageCreateInfo imageCreateInfo;
+    VkExternalMemoryImageCreateInfoKHR externalMemoryImageCreateInfo;
+    VkMemoryRequirements imageMemoryRequirements;
+    VkMemoryAllocateInfo memoryAllocateInfo;
+    VkImportAndroidHardwareBufferInfoANDROID importHardwareBufferInfo;
+    unsigned int i;
+    bool ret;
+
+    TRACE("%p %p %p %p %u\n", device, create_info, allocator, swapchain, create_info->minImageCount);
 
     if (allocator)
         FIXME("Support for allocation callbacks not implemented yet\n");
 
-    create_info_host = *create_info;
-    //create_info_host.surface = x11_surface->surface;
+    wine_swapchain = calloc(1, sizeof(struct wine_vk_swapchain));
+    if (!wine_swapchain)
+    {
+        ERR("Failed to allocate memory for swapchain\n");
+        result = VK_ERROR_OUT_OF_HOST_MEMORY;
+        goto err;
+    }
 
-    FIXME("IMPLEMENT SWAPCHAIN\n");
-    return pvkCreateSwapchainKHR(device, &create_info_host, NULL /* allocator */, swapchain);
+    wine_swapchain->image_count = create_info->minImageCount;
+    wine_swapchain->hardware_buffers = calloc(wine_swapchain->image_count, sizeof(AHardwareBuffer *));
+    wine_swapchain->images = calloc(wine_swapchain->image_count, sizeof(VkImage));
+    wine_swapchain->image_memory = calloc(wine_swapchain->image_count, sizeof(VkDeviceMemory));
+
+    if (!wine_swapchain->hardware_buffers || !wine_swapchain->images || !wine_swapchain->image_memory)
+     {
+        ERR("Failed to allocate memory for swapchain images\n");
+        result = VK_ERROR_OUT_OF_HOST_MEMORY;
+        goto err;
+    }
+
+    // TODO: maybe return the usage flags in the response (or maybe whole create info struct)
+    // TODO: replace 0 with something better after we have actual windows
+    pthread_mutex_lock(&cassia_wsi_mutex);
+    ret = cassiaclt_compositor_allocate_swapchain(cassia_wsi_socket, 0, create_info->imageFormat,
+                                                  create_info->imageExtent, create_info->imageUsage,
+                                                  create_info->compositeAlpha, wine_swapchain->image_count,
+                                                  &result, &wine_swapchain->cassia_handle,
+                                                  wine_swapchain->hardware_buffers);
+
+    pthread_mutex_unlock(&cassia_wsi_mutex);
+
+    if (!ret)
+    {
+        ERR("Lost connection to cassia server!\n");
+        result = VK_ERROR_DEVICE_LOST;
+        goto err;
+    }
+
+    externalMemoryImageCreateInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+    externalMemoryImageCreateInfo.pNext = NULL;
+    externalMemoryImageCreateInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID;
+
+    imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageCreateInfo.pNext = &externalMemoryImageCreateInfo;
+    imageCreateInfo.flags = 0;
+    imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageCreateInfo.format = create_info->imageFormat;
+    imageCreateInfo.extent.width = create_info->imageExtent.width;
+    imageCreateInfo.extent.height = create_info->imageExtent.height;
+    imageCreateInfo.extent.depth = 1;
+    imageCreateInfo.mipLevels = 1;
+    imageCreateInfo.arrayLayers = 1;
+    imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageCreateInfo.usage = create_info->imageUsage | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    imageCreateInfo.queueFamilyIndexCount = 0;
+    imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    for (i = 0; i < wine_swapchain->image_count; i++)
+    {
+        result = pvkCreateImage(device, &imageCreateInfo, NULL, &wine_swapchain->images[i]);
+        if (result != VK_SUCCESS) {
+            ERR("Failed to create swapchain image");
+            goto err;
+        }
+
+        pvkGetImageMemoryRequirements(device, wine_swapchain->images[i], &imageMemoryRequirements);
+
+        importHardwareBufferInfo.sType = VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID;
+        importHardwareBufferInfo.pNext = NULL;
+        importHardwareBufferInfo.buffer = wine_swapchain->hardware_buffers[i];
+
+        memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memoryAllocateInfo.pNext = &importHardwareBufferInfo;
+        memoryAllocateInfo.memoryTypeIndex = 0; // TODO use hwb ext to get this
+        memoryAllocateInfo.allocationSize = imageMemoryRequirements.size;
+        result = pvkAllocateMemory(device, &memoryAllocateInfo, NULL, &wine_swapchain->image_memory[i]);
+        if (result != VK_SUCCESS) {
+
+            ERR("Failed to import swapchain image memory\n");
+            goto err;
+        }
+
+        result = pvkBindImageMemory(device, wine_swapchain->images[i], wine_swapchain->image_memory[i], 0);
+        if (result != VK_SUCCESS) {
+            ERR("Failed to bind imported swapchain image memory\n");
+            goto err;
+        }
+    }
+
+    *swapchain = (VkSwapchainKHR)wine_swapchain;
+
+    return result;
+
+err:
+    ANDROID_vkDestroySwapchainKHR(device, (VkSwapchainKHR)swapchain, NULL);
+
+    return result;
 }
 
 static VkResult ANDROID_vkCreateWin32SurfaceKHR(VkInstance instance,
         const VkWin32SurfaceCreateInfoKHR *create_info,
         const VkAllocationCallbacks *allocator, VkSurfaceKHR *surface)
 {
+    struct wine_vk_surface *wine_surface;
     TRACE("%p %p %p %p\n", instance, create_info, allocator, surface);
 
     if (allocator)
@@ -214,7 +549,19 @@ static VkResult ANDROID_vkCreateWin32SurfaceKHR(VkInstance instance,
         return VK_ERROR_INCOMPATIBLE_DRIVER;
     }
 
-    FIXME("IMPLEMENT SWAPCHAIN\n");
+    wine_surface = malloc(sizeof(struct wine_vk_surface));
+    if (!wine_surface)
+    {
+        ERR("Failed to allocate memory for surface\n");
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    wine_surface->hwnd = create_info->hwnd;
+
+    /* TODO WE NEED TO HAVE SOME SORT OF HWND TO CASSIA WINDOW MAPPING HERE */
+
+    *surface = (VkSurfaceKHR)wine_surface;
+
     return VK_SUCCESS;
 }
 
@@ -236,20 +583,45 @@ static void ANDROID_vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surfac
     if (allocator)
         FIXME("Support for allocation callbacks not implemented yet\n");
 
-    FIXME("IMPLEMENT SWAPCHAIN\n");
+    free((struct wine_vk_surface*)surface);
 }
 
 static void ANDROID_vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
          const VkAllocationCallbacks *allocator)
 {
+    struct wine_vk_swapchain *wine_swapchain = (struct wine_vk_swapchain *)swapchain;
+    unsigned int i;
+
     TRACE("%p, 0x%s %p\n", device, wine_dbgstr_longlong(swapchain), allocator);
 
     if (allocator)
         FIXME("Support for allocation callbacks not implemented yet\n");
 
-    FIXME("IMPLEMENT SWAPCHAIN\n");
+    if (!wine_swapchain)
+        return;
 
-    pvkDestroySwapchainKHR(device, swapchain, NULL /* allocator */);
+    if (wine_swapchain->images && wine_swapchain->hardware_buffers && wine_swapchain->image_memory)
+    {
+        for (i = 0; i < wine_swapchain->image_count; i++)
+        {
+            if (wine_swapchain->images[i])
+                pvkDestroyImage(device, wine_swapchain->images[i], NULL);
+
+            if (wine_swapchain->image_memory[i])
+                pvkFreeMemory(device, wine_swapchain->image_memory[i], NULL);
+
+            if (wine_swapchain->hardware_buffers[i])
+                AHardwareBuffer_release(wine_swapchain->hardware_buffers[i]);
+        }
+    }
+
+    free(wine_swapchain->image_memory);
+    free(wine_swapchain->images);
+    free(wine_swapchain->hardware_buffers);
+
+    // TODO: cassasrvfree swapchain
+
+    free(wine_swapchain);
 }
 
 static VkResult ANDROID_vkEnumerateInstanceExtensionProperties(const char *layer_name,
@@ -278,7 +650,7 @@ static VkResult ANDROID_vkEnumerateInstanceExtensionProperties(const char *layer
 
     for (i = 0; i < *count; i++)
     {
-        /* For now the only amdrpod extension we need to fixup. Long-term we may need an array. */
+        /* For now the only android extension we need to fixup. Long-term we may need an array. */
         if (!strcmp(properties[i].extensionName, "VK_KHR_android_surface"))
         {
             TRACE("Substituting VK_KHR_android_surface for VK_KHR_win32_surface\n");
@@ -293,12 +665,23 @@ static VkResult ANDROID_vkEnumerateInstanceExtensionProperties(const char *layer
     return res;
 }
 
+static VkResult ANDROID_vkGetDeviceGroupPresentCapabilitiesKHR(VkDevice device,
+        VkDeviceGroupPresentCapabilitiesKHR *capabilities)
+{
+    capabilities->sType = VK_STRUCTURE_TYPE_DEVICE_GROUP_PRESENT_CAPABILITIES_KHR;
+    capabilities->pNext = NULL;
+    capabilities->presentMask[0] = 1;
+    capabilities->modes = VK_DEVICE_GROUP_PRESENT_MODE_LOCAL_BIT_KHR;
+    return VK_SUCCESS;
+}
+
 static VkResult ANDROID_vkGetDeviceGroupSurfacePresentModesKHR(VkDevice device,
         VkSurfaceKHR surface, VkDeviceGroupPresentModeFlagsKHR *flags)
 {
     TRACE("%p, 0x%s, %p\n", device, wine_dbgstr_longlong(surface), flags);
 
-    return VK_ERROR_DEVICE_LOST;
+    *flags = VK_DEVICE_GROUP_PRESENT_MODE_LOCAL_BIT_KHR;
+    return VK_SUCCESS;
 }
 
 static void *ANDROID_vkGetDeviceProcAddr(VkDevice device, const char *name)
@@ -328,79 +711,295 @@ static void *ANDROID_vkGetInstanceProcAddr(VkInstance instance, const char *name
 static VkResult ANDROID_vkGetPhysicalDevicePresentRectanglesKHR(VkPhysicalDevice phys_dev,
         VkSurfaceKHR surface, uint32_t *count, VkRect2D *rects)
 {
-    return VK_ERROR_DEVICE_LOST;
-}
+    if (!rects)
+    {
+        *count = 1;
+        return VK_SUCCESS;
+    }
 
-static VkResult ANDROID_vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice phys_dev,
-        const VkPhysicalDeviceSurfaceInfo2KHR *surface_info, VkSurfaceCapabilities2KHR *capabilities)
-{
+    if (*count < 1) {
+        *count = 0;
+        return VK_INCOMPLETE;
+    }
+
+
+    // TODO: query window size from cassia!
+    rects[0].offset.x = 0;
+    rects[0].offset.y = 0;
+
+    // rects[0].extent.width = ...
+    // rects[0].extent.height = ...
+
+    *count = 1;
+    ERR("ANDROID_vkGetPhysicalDevicePresentRectanglesKHR is unimplemented!\n");
     return VK_ERROR_DEVICE_LOST;
 }
 
 static VkResult ANDROID_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice phys_dev,
         VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR *capabilities)
 {
-    return VK_ERROR_DEVICE_LOST;
+
+    capabilities->minImageCount = 3;
+    capabilities->maxImageCount = 0;
+
+    // TODO: query window size from cassia!
+    capabilities->currentExtent.width = 1920;
+    capabilities->currentExtent.height = 1080;
+
+    capabilities->minImageExtent.width = 1;
+    capabilities->minImageExtent.height = 1;
+
+    // TODO: is this fine?
+    capabilities->maxImageExtent.width = 4096;
+    capabilities->maxImageExtent.height = 4096;
+
+    capabilities->maxImageArrayLayers = 1;
+    capabilities->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    capabilities->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    capabilities->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR |
+                                            VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR |
+                                            VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR |
+                                            VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+
+    capabilities->supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                        VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                        VK_IMAGE_USAGE_STORAGE_BIT;
+
+    return VK_SUCCESS;
+}
+
+static VkResult ANDROID_vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice phys_dev,
+        const VkPhysicalDeviceSurfaceInfo2KHR *surface_info, VkSurfaceCapabilities2KHR *capabilities)
+{
+    if (surface_info->pNext)
+    {
+        ERR("Unsupported pNext structs");
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    capabilities->sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR;
+    capabilities->pNext = NULL;
+
+    return ANDROID_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys_dev, surface_info->surface,
+                                                             &capabilities->surfaceCapabilities);
 
 }
 
+// TODO: investigate bgra (needs opaque fd as ahwb doesn't support)
 static VkResult ANDROID_vkGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevice phys_dev,
         const VkPhysicalDeviceSurfaceInfo2KHR *surface_info, uint32_t *count, VkSurfaceFormat2KHR *formats)
 {
-     return VK_ERROR_DEVICE_LOST;
+    if (!formats) {
+        *count = 2/*4*/;
+        return VK_SUCCESS;
+    }
 
+    if (*count < 2/*4*/) {
+        *count = 0;
+        return VK_INCOMPLETE;
+    }
+
+
+    formats[0].sType = VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR;
+    formats[0].pNext = NULL;
+    formats[0].surfaceFormat.format = VK_FORMAT_R8G8B8A8_UNORM;
+    formats[0].surfaceFormat.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+
+    formats[1].sType = VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR;
+    formats[1].pNext = NULL;
+    formats[1].surfaceFormat.format = VK_FORMAT_R8G8B8A8_SRGB;
+    formats[1].surfaceFormat.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+
+    formats[2].sType = VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR;
+    formats[2].pNext = NULL;
+    formats[2].surfaceFormat.format = VK_FORMAT_B8G8R8A8_UNORM;
+    formats[2].surfaceFormat.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+
+    formats[3].sType = VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR;
+    formats[3].pNext = NULL;
+    formats[3].surfaceFormat.format = VK_FORMAT_B8G8R8A8_SRGB;
+    formats[3].surfaceFormat.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+
+    *count = 2;//4;
+
+    return VK_SUCCESS;
 }
 
 static VkResult ANDROID_vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice phys_dev,
         VkSurfaceKHR surface, uint32_t *count, VkSurfaceFormatKHR *formats)
 {
-    return VK_ERROR_DEVICE_LOST;
+    if (!formats) {
+        *count = 2/*4*/;
+        return VK_SUCCESS;
+    }
 
+    if (*count < 2/*4*/) {
+        *count = 0;
+        return VK_INCOMPLETE;
+    }
+
+
+    formats[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+    formats[0].colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    formats[1].format = VK_FORMAT_R8G8B8A8_SRGB;
+    formats[1].colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    formats[2].format = VK_FORMAT_B8G8R8A8_UNORM;
+    formats[2].colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    formats[3].format = VK_FORMAT_B8G8R8A8_SRGB;
+    formats[3].colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+
+    *count = 2;//4;
+
+    return VK_SUCCESS;
 }
 
+
+// TODO: mailbox/immediatr
 static VkResult ANDROID_vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice phys_dev,
         VkSurfaceKHR surface, uint32_t *count, VkPresentModeKHR *modes)
 {
-    return VK_ERROR_DEVICE_LOST;
+    if (!modes) {
+        *count = 1;
+        return VK_SUCCESS;
+    }
 
+    if (*count < 1)
+        return VK_INCOMPLETE;
+
+
+    modes[0] = VK_PRESENT_MODE_FIFO_KHR;
+
+    *count = 1;
+
+    return VK_SUCCESS;
 }
 
 static VkResult ANDROID_vkGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice phys_dev,
         uint32_t index, VkSurfaceKHR surface, VkBool32 *supported)
 {
-
-    return pvkGetPhysicalDeviceSurfaceSupportKHR(phys_dev, index, surface, supported);
+    *supported = true;
+    return VK_SUCCESS;
 }
 
 static VkBool32 ANDROID_vkGetPhysicalDeviceWin32PresentationSupportKHR(VkPhysicalDevice phys_dev,
         uint32_t index)
 {
-    return VK_ERROR_DEVICE_LOST;
-
+    return true;
 }
 
 static VkResult ANDROID_vkGetSwapchainImagesKHR(VkDevice device,
         VkSwapchainKHR swapchain, uint32_t *count, VkImage *images)
 {
-    return VK_ERROR_DEVICE_LOST;
+    struct wine_vk_swapchain *wine_swapchain = (struct wine_vk_swapchain *)swapchain;
 
+    if (!images) {
+        *count = wine_swapchain->image_count;
+        return VK_SUCCESS;
+    }
+
+    if (*count < wine_swapchain->image_count) {
+        *count = 0;
+        return VK_INCOMPLETE;
+    }
+
+    memcpy(images, wine_swapchain->images, wine_swapchain->image_count * sizeof(VkImage));
+    *count = wine_swapchain->image_count;
+    return VK_SUCCESS;
 }
 
 static VkResult ANDROID_vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *present_info)
 {
-    return VK_ERROR_DEVICE_LOST;
+    int tmp_queue_semaphore, old_master_queue_semaphore, master_queue_semaphore = -1;
+    VkSemaphoreGetFdInfoKHR semaphoreGetFdInfo;
+    struct wine_vk_swapchain *wine_swapchain;
+    bool ret;
+    unsigned int i;
+    VkResult result = VK_SUCCESS;
+
+    if (present_info->pNext)
+    {
+        ERR("pNext is not supported");
+        return VK_ERROR_DEVICE_LOST;
+    }
+
+    semaphoreGetFdInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
+    semaphoreGetFdInfo.pNext = NULL;
+    semaphoreGetFdInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+
+    if (present_info->waitSemaphoreCount >= 1) {
+        semaphoreGetFdInfo.semaphore = present_info->pWaitSemaphores[0];
+        result = pvkGetSemaphoreFdKHR((VkDevice)NULL, &semaphoreGetFdInfo, &master_queue_semaphore);
+        if (result != VK_SUCCESS)
+            return result;
+    }
+
+
+    // For any further semaphores, need to merge them sequentially into a single fence fd
+    for (i = 1; i < present_info->waitSemaphoreCount; i++)
+    {
+        semaphoreGetFdInfo.semaphore = present_info->pWaitSemaphores[i];
+        // TODO, not cheat here and pass an actual device
+        result = pvkGetSemaphoreFdKHR((VkDevice)NULL, &semaphoreGetFdInfo, &tmp_queue_semaphore);
+        if (tmp_queue_semaphore == 0)
+        {
+            ERR("QCOM QUIRK %d\n", result);
+            tmp_queue_semaphore = -1;
+        }
+        if (result != VK_SUCCESS) {
+            close(master_queue_semaphore);
+            return result;
+        }
+
+        old_master_queue_semaphore = master_queue_semaphore;
+        master_queue_semaphore = sync_merge("queue_wait", tmp_queue_semaphore, old_master_queue_semaphore);
+        close(tmp_queue_semaphore);
+        close(old_master_queue_semaphore);
+    }
+
+    for (i = 0; i < present_info->swapchainCount; i++)
+    {
+        wine_swapchain = (struct wine_vk_swapchain *)present_info->pSwapchains[i];
+
+        pthread_mutex_lock(&cassia_wsi_mutex);
+        ret = cassiaclt_compositor_command_queue(cassia_wsi_socket, wine_swapchain->cassia_handle,
+                                                 present_info->pImageIndices[i], master_queue_semaphore,
+                                                 &result);
+        pthread_mutex_unlock(&cassia_wsi_mutex);
+
+        if (!ret)
+        {
+            ERR("Lost connection to cassia server!");
+            result = VK_ERROR_DEVICE_LOST;
+        }
+
+        if (present_info->pResults)
+            present_info->pResults[i] = result;
+
+        if (result != VK_SUCCESS)
+            goto end;
+    }
+
+end:
+    close(master_queue_semaphore);
+    return result;
 
 }
 
 static VkSurfaceKHR ANDROID_wine_get_native_surface(VkSurfaceKHR surface)
 {
-    FIXME("IMPLEMENT SWAPCHAIN\n");
+    return surface;
+}
 
-    return 0;
+static void *ANDROID_wine_get_adrenotools_mapping_handle(void)
+{
+    return adrenotools_mapping_handle;
 }
 
 static const struct vulkan_funcs vulkan_funcs =
 {
+    ANDROID_vkAcquireNextImage2KHR,
+    ANDROID_vkAcquireNextImageKHR,
+    ANDROID_vkCreateDevice,
     ANDROID_vkCreateInstance,
     ANDROID_vkCreateSwapchainKHR,
     ANDROID_vkCreateWin32SurfaceKHR,
@@ -408,6 +1007,7 @@ static const struct vulkan_funcs vulkan_funcs =
     ANDROID_vkDestroySurfaceKHR,
     ANDROID_vkDestroySwapchainKHR,
     ANDROID_vkEnumerateInstanceExtensionProperties,
+    ANDROID_vkGetDeviceGroupPresentCapabilitiesKHR,
     ANDROID_vkGetDeviceGroupSurfacePresentModesKHR,
     ANDROID_vkGetDeviceProcAddr,
     ANDROID_vkGetInstanceProcAddr,
@@ -423,6 +1023,7 @@ static const struct vulkan_funcs vulkan_funcs =
     ANDROID_vkQueuePresentKHR,
 
     ANDROID_wine_get_native_surface,
+    ANDROID_wine_get_adrenotools_mapping_handle,
 };
 
 static void *ANDROID_get_vk_device_proc_addr(const char *name)
