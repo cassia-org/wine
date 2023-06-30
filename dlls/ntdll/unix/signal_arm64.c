@@ -1514,6 +1514,8 @@ static void usr2_handler( int signal, siginfo_t *siginfo, void *sigcontext )
  */
 NTSTATUS get_thread_ldt_entry( HANDLE handle, void *data, ULONG len, ULONG *ret_len )
 {
+   FIXME( "unimplemented" );
+
     return STATUS_NOT_IMPLEMENTED;
 }
 
@@ -1524,6 +1526,7 @@ NTSTATUS get_thread_ldt_entry( HANDLE handle, void *data, ULONG len, ULONG *ret_
  */
 NTSTATUS WINAPI NtSetLdtEntries( ULONG sel1, LDT_ENTRY entry1, ULONG sel2, LDT_ENTRY entry2 )
 {
+    FIXME( "unimplemented" );
     return STATUS_NOT_IMPLEMENTED;
 }
 
