@@ -130,9 +130,16 @@ struct emu_run_params
     I386_CONTEXT *c;
 };
 
+struct invalidate_code_range_params
+{
+    DWORD64 base;
+    DWORD64 length;
+};
+
 enum xtajit_funcs
 {
     unix_attach,
     unix_detach,
     unix_emu_run,
+    unix_invalidate_code_range
 };
