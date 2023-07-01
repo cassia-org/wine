@@ -38,6 +38,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(wow);
 
 static void (*pho_A)(void);
 static void (*pho_B)(uint64_t teb, I386_CONTEXT* ctx);
+static void (*pho_invalidate_code_range)(uint64_t start, uint64_t length);
 
 static void *emuapi_handle;
 
@@ -60,6 +61,7 @@ static NTSTATUS attach( void *args )
 #define LOAD_FUNCPTR_OPT(f) if((p##f = dlsym(emuapi_handle, #f)) == NULL) {ERR(#f " %p\n", p##f);}
     LOAD_FUNCPTR(ho_A);
     LOAD_FUNCPTR(ho_B);
+    LOAD_FUNCPTR(ho_invalidate_code_range);
 #undef LOAD_FUNCPTR_OPT
 #undef LOAD_FUNCPTR
 
@@ -100,9 +102,16 @@ static NTSTATUS emu_run( void *args )
     return 0;
 }
 
+static void invalidate_code_range ( void *args )
+{
+    const struct invalidate_code_range_params *params = args;
+    pho_invalidate_code_range(params->base, params->length);
+}
+
 const unixlib_entry_t __wine_unix_call_funcs[] =
 {
     attach,
     detach,
     emu_run,
+    invalidate_code_range,
 };
