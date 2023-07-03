@@ -39,6 +39,10 @@ extern ULONG_PTR highest_user_address DECLSPEC_HIDDEN;
 extern ULONG_PTR default_zero_bits DECLSPEC_HIDDEN;
 extern SYSTEM_DLL_INIT_BLOCK *pLdrSystemDllInitBlock DECLSPEC_HIDDEN;
 extern void (WINAPI *pBTCpuUpdateProcessorInformation)( SYSTEM_CPU_INFORMATION * ) DECLSPEC_HIDDEN;
+extern void (WINAPI *pBTCpuNotifyUnmapViewOfSection)(PVOID,ULONG) DECLSPEC_HIDDEN;
+extern void (WINAPI *pBTCpuNotifyMemoryFree)(PVOID,SIZE_T,ULONG) DECLSPEC_HIDDEN;
+extern void (WINAPI *pBTCpuNotifyMemoryProtect)(PVOID,SIZE_T,DWORD) DECLSPEC_HIDDEN;
+extern void (WINAPI *pBTCpuNotifyFlushInstructionCache2)(LPCVOID,SIZE_T) DECLSPEC_HIDDEN;
 
 struct object_attr64
 {

@@ -216,6 +216,14 @@ NTSTATUS WINAPI wow64_NtFreeVirtualMemory( UINT *args )
     SIZE_T size;
     NTSTATUS status;
 
+    if (pBTCpuNotifyMemoryFree)
+    {
+        if (GetCurrentProcess() == process)
+            pBTCpuNotifyMemoryFree( *addr_32to64( &addr, addr32 ),  *size_32to64( &size, size32 ),  type );
+        else
+            FIXME( "Freeing memory of non-current process\n" );
+    }
+
     status = NtFreeVirtualMemory( process, addr_32to64( &addr, addr32 ),
                                   size_32to64( &size, size32 ), type );
     if (!status)
@@ -416,6 +424,14 @@ NTSTATUS WINAPI wow64_NtProtectVirtualMemory( UINT *args )
     void *addr;
     SIZE_T size;
     NTSTATUS status;
+
+    if (pBTCpuNotifyMemoryProtect)
+    {
+        if (GetCurrentProcess() == process)
+            pBTCpuNotifyMemoryProtect( *addr_32to64( &addr, addr32 ), *size_32to64( &size, size32 ), new_prot );
+        else
+            FIXME( "Protecting the memory of non-current process\n" );
+    }
 
     status = NtProtectVirtualMemory( process, addr_32to64( &addr, addr32 ),
                                      size_32to64( &size, size32 ), new_prot, old_prot );
@@ -665,6 +681,14 @@ NTSTATUS WINAPI wow64_NtUnmapViewOfSection( UINT *args )
     HANDLE process = get_handle( &args );
     void *addr = get_ptr( &args );
 
+    if (pBTCpuNotifyUnmapViewOfSection)
+    {
+        if (GetCurrentProcess() == process)
+            pBTCpuNotifyUnmapViewOfSection( addr, 0 );
+        else
+            FIXME( "Unmapping memory of non-current process\n" );
+    }
+
     return NtUnmapViewOfSection( process, addr );
 }
 
@@ -677,6 +701,14 @@ NTSTATUS WINAPI wow64_NtUnmapViewOfSectionEx( UINT *args )
     HANDLE process = get_handle( &args );
     void *addr = get_ptr( &args );
     ULONG flags = get_ulong( &args );
+
+    if (pBTCpuNotifyUnmapViewOfSection)
+    {
+        if (GetCurrentProcess() == process)
+            pBTCpuNotifyUnmapViewOfSection( addr, flags );
+        else
+            FIXME( "Unmapping memory of non-current process\n" );
+    }
 
     return NtUnmapViewOfSectionEx( process, addr, flags );
 }
