@@ -1499,17 +1499,18 @@ static void update_wineprefix( BOOL force )
             for (;;)
             {
                 MSG msg;
-                DWORD res = MsgWaitForMultipleObjects( 1, &process, FALSE, INFINITE, QS_ALLINPUT );
-                if (res == WAIT_OBJECT_0)
+                DWORD res;
+                if (process) res = MsgWaitForMultipleObjects( 1, &process, FALSE, INFINITE, QS_ALLINPUT );
+                if (!process || res == WAIT_OBJECT_0)
                 {
-                    CloseHandle( process );
+                    if (process) CloseHandle( process );
                     if (!machines[count]) break;
                     if (HIWORD(machines[count]) & 4 /* native machine */)
                         process = start_rundll32( inf_path, L"DefaultInstall", IMAGE_FILE_MACHINE_TARGET_HOST );
                     else
                         process = start_rundll32( inf_path, L"Wow64Install", LOWORD(machines[count]) );
                     count++;
-                    if (!process) break;
+                    if (!process) continue;
                 }
                 else while (PeekMessageW( &msg, 0, 0, 0, PM_REMOVE )) DispatchMessageW( &msg );
             }
