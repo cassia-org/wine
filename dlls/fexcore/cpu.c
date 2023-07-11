@@ -29,6 +29,7 @@
 
 #include "wine/unixlib.h"
 #include "wine/debug.h"
+#include "wine/exception.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(wow);
 
@@ -41,7 +42,8 @@ static const UINT_PTR page_mask = 0xfff;
 static void (*pho_init)(void);
 static void (*pho_run)( DWORD64 teb, I386_CONTEXT *ctx );
 static void (*pho_invalidate_code_range)( DWORD64 start, DWORD64 length );
-
+static BOOLEAN (*pho_unaligned_access_handler)( CONTEXT *context );
+static BOOLEAN (*pho_address_in_jit)( DWORD64 addr );
 
 static void *get_wow_teb( TEB *teb )
 {
@@ -68,6 +70,8 @@ static NTSTATUS initialize(void)
     LOAD_FUNCPTR(ho_init);
     LOAD_FUNCPTR(ho_run);
     LOAD_FUNCPTR(ho_invalidate_code_range);
+    LOAD_FUNCPTR(ho_unaligned_access_handler);
+    LOAD_FUNCPTR(ho_address_in_jit);
 #undef LOAD_FUNCPTR
 
     pho_init();
@@ -210,14 +214,20 @@ NTSTATUS WINAPI BTCpuSetContext( HANDLE thread, HANDLE process, void *unknown, I
     return NtSetInformationThread( thread, ThreadWow64Context, ctx, sizeof(*ctx) );
 }
 
-
 /**********************************************************************
  *           BTCpuResetToConsistentState  (xtajit.@)
  */
 NTSTATUS WINAPI BTCpuResetToConsistentState( EXCEPTION_POINTERS *ptrs )
 {
+    struct host_restore_stack_layout *stack;
     CONTEXT *context = ptrs->ContextRecord;
-    I386_CONTEXT wow_context;
+    EXCEPTION_RECORD *exception = ptrs->ExceptionRecord;
+
+    if (exception->ExceptionCode == EXCEPTION_DATATYPE_MISALIGNMENT && pho_unaligned_access_handler( context ))
+        NtContinue( context, FALSE );
+
+    if (!pho_address_in_jit( context->Pc )) return STATUS_SUCCESS;
+
     FIXME( "NYI\n" );
     return STATUS_SUCCESS;
 }
