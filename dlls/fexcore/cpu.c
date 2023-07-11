@@ -38,9 +38,9 @@ static const UINT_PTR page_mask = 0xfff;
 #define ROUND_SIZE(addr,size) (((SIZE_T)(size) + ((UINT_PTR)(addr) & page_mask) + page_mask) & ~page_mask)
 
 
-static void (*pho_A)(void);
-static void (*pho_B)(DWORD64 teb, I386_CONTEXT* ctx);
-static void (*pho_invalidate_code_range)(DWORD64 start, DWORD64 length);
+static void (*pho_init)(void);
+static void (*pho_run)( DWORD64 teb, I386_CONTEXT *ctx );
+static void (*pho_invalidate_code_range)( DWORD64 start, DWORD64 length );
 
 
 static void *get_wow_teb( TEB *teb )
@@ -48,9 +48,9 @@ static void *get_wow_teb( TEB *teb )
     return teb->WowTebOffset ? (void *)((char *)teb + teb->WowTebOffset) : NULL;
 }
 
-static void emu_run(I386_CONTEXT *context)
+static void emu_run( I386_CONTEXT *context )
 {
-    pho_B( (DWORD64)get_wow_teb( NtCurrentTeb() ), context );
+    pho_run( (DWORD64)get_wow_teb( NtCurrentTeb() ), context );
 }
 
 static NTSTATUS initialize(void)
@@ -64,31 +64,24 @@ static NTSTATUS initialize(void)
     if (!NT_SUCCESS( status ))
         return status;
 
-#define LOAD_FUNCPTR(f) if((p##f = (void *)RtlFindExportedRoutineByName( module, #f )) == NULL) {ERR( #f " %p\n", p##f );return STATUS_ENTRYPOINT_NOT_FOUND;}
-    LOAD_FUNCPTR(ho_A);
-    LOAD_FUNCPTR(ho_B);
+#define LOAD_FUNCPTR(f) if((p##f = (void*)RtlFindExportedRoutineByName( module, #f )) == NULL) { ERR( #f " %p\n", p##f ); return STATUS_ENTRYPOINT_NOT_FOUND; }
+    LOAD_FUNCPTR(ho_init);
+    LOAD_FUNCPTR(ho_run);
     LOAD_FUNCPTR(ho_invalidate_code_range);
 #undef LOAD_FUNCPTR
 
-    pho_A();
+    pho_init();
     return STATUS_SUCCESS;
 }
 
 NTSTATUS WINAPI Wow64SystemServiceEx( UINT num, UINT *args );
 
-#if 1
-// pausehandler
 static const UINT16 bopcode = 0x2ecd;
 static const UINT16 unxcode = 0x2ecd;
-#else
-// thunks
-static const UINT16 bopcode = 0x3f0f;
-static const UINT16 unxcode = 0x3f0f;
-#endif
 
 static NTSTATUS (WINAPI *p__wine_unix_call)( unixlib_handle_t, unsigned int, void * );
 
-void WINAPI handle_unix_call(I386_CONTEXT *c)
+static void handle_unix_call( I386_CONTEXT *c )
 {
     unixlib_handle_t *handle;
     UNICODE_STRING str;
@@ -96,8 +89,8 @@ void WINAPI handle_unix_call(I386_CONTEXT *c)
     UINT32 *p, p0;
     NTSTATUS ret;
 
-    p = ULongToPtr(c->Esp);
-    handle = (void*)&p[1];
+    p = ULongToPtr( c->Esp );
+    handle = (void *)&p[1];
 
     if (!p__wine_unix_call)
     {
@@ -107,28 +100,23 @@ void WINAPI handle_unix_call(I386_CONTEXT *c)
     }
 
     p0 = p[0];
-    ret = p__wine_unix_call(*handle, p[3], ULongToPtr(p[4]));
+    ret = p__wine_unix_call( *handle, p[3], ULongToPtr( p[4] ) );
     c->Eip = p0;
     c->Esp += 4+8+4+4; /* ret + args */
     c->Eax = ret;
 }
 
-void WINAPI handle_syscall(I386_CONTEXT *c)
+static void handle_syscall( I386_CONTEXT *c )
 {
     I386_CONTEXT *wow_context;
     NTSTATUS ret;
-    RtlWow64GetCurrentCpuArea(NULL, (void **)&wow_context, NULL);
-    ret = Wow64SystemServiceEx(wow_context->Eax, ULongToPtr(wow_context->Esp+8));
-    if (ULongToPtr(wow_context->Eip) == &bopcode)
+    RtlWow64GetCurrentCpuArea( NULL, (void **)&wow_context, NULL );
+    ret = Wow64SystemServiceEx( wow_context->Eax, ULongToPtr( wow_context->Esp + 8 ) );
+    if (ULongToPtr( wow_context->Eip ) == &bopcode)
     {
-        TRACE("ADAPTING\n");
-        wow_context->Eip=*(DWORD*)ULongToPtr(wow_context->Esp);
-        wow_context->Esp+=4;
-        wow_context->Eax=ret;
-    }
-    else
-    {
-        TRACE("NOT ADAPTING !!!\n");
+        wow_context->Eip = *(DWORD *)ULongToPtr( wow_context->Esp );
+        wow_context->Esp += 4;
+        wow_context->Eax = ret;
     }
 }
 
@@ -141,34 +129,31 @@ void WINAPI BTCpuSimulate(void)
     I386_CONTEXT *wow_context;
     NTSTATUS ret;
 
-    RtlWow64GetCurrentCpuArea(NULL, (void **)&wow_context, NULL);
-
-    TRACE( "START %p %08lx\n", wow_context, wow_context->Eip );
+    RtlWow64GetCurrentCpuArea( NULL, (void **)&wow_context, NULL );
 
 
     emu_run( wow_context );
 
-    if (ULongToPtr(wow_context->Eip) == &unxcode)
+    if (ULongToPtr( wow_context->Eip ) == &unxcode)
     {
         /* unix call */
-        handle_unix_call(wow_context);
+        handle_unix_call( wow_context );
     }
-    else if (ULongToPtr(wow_context->Eip) == &bopcode)
+    else if (ULongToPtr( wow_context->Eip ) == &bopcode)
     {
         /* sys call */
-        handle_syscall(wow_context);
+        handle_syscall( wow_context );
     }
     else
     {
         DWORD arg[] = {0xffffffff, 1};
 
-        ERR("Client crashed\n");
-        ERR("ret %x\n", ret);
-        ERR("EIP %p\n", ULongToPtr(wow_context->Eip));
-        ERR("bop %p\n", &bopcode);
+        ERR( "Client crashed\n" );
+        ERR( "EIP %p\n", ULongToPtr( wow_context->Eip ) );
+        ERR( "bop %p\n", &bopcode );
 
         /* NtTerminateProcess */
-        Wow64SystemServiceEx(212, (UINT*)&arg);
+        Wow64SystemServiceEx( 212, (UINT*)&arg );
         return;
     }
 }
@@ -276,7 +261,7 @@ void WINAPI BTCpuNotifyUnmapViewOfSection( PVOID addr, ULONG flags )
 {
     NTSTATUS ret = invalidate_mapped_section( addr );
     if (!NT_SUCCESS(ret))
-        WARN( "Failed to invalidate code memory: 0x%x\n", ret );
+        WARN( "Failed to invalidate code memory: %#lx\n", ret );
 }
 
 /**********************************************************************
