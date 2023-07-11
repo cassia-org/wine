@@ -26,43 +26,60 @@
 #include "winternl.h"
 #include "winreg.h"
 #include "winnls.h"
-#include "unixlib.h"
+
+#include "wine/unixlib.h"
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(wow);
-
-static unixlib_handle_t emuapi_handle;
 
 static const UINT_PTR page_mask = 0xfff;
 
 #define ROUND_ADDR(addr,mask) ((void *)((UINT_PTR)(addr) & ~(UINT_PTR)(mask)))
 #define ROUND_SIZE(addr,size) (((SIZE_T)(size) + ((UINT_PTR)(addr) & page_mask) + page_mask) & ~page_mask)
 
-#define EMUAPI_CALL( func, params ) __wine_unix_call( emuapi_handle, unix_ ## func, params )
+
+static void (*pho_A)(void);
+static void (*pho_B)(DWORD64 teb, I386_CONTEXT* ctx);
+static void (*pho_invalidate_code_range)(DWORD64 start, DWORD64 length);
 
 
-NTSTATUS WINAPI emu_run(I386_CONTEXT *c)
+static void *get_wow_teb( TEB *teb )
 {
-    struct emu_run_params params = { c };
-    NTSTATUS ret;
-    ret = EMUAPI_CALL( emu_run, &params );
-    return ret;
+    return teb->WowTebOffset ? (void *)((char *)teb + teb->WowTebOffset) : NULL;
 }
 
-NTSTATUS WINAPI invalidate_code_range( DWORD64 base, DWORD64 length )
+static void emu_run(I386_CONTEXT *context)
 {
-    struct invalidate_code_range_params params = { base, length };
-    NTSTATUS ret;
-    ret = EMUAPI_CALL( invalidate_code_range, &params );
-    return ret;
+    pho_B( (DWORD64)get_wow_teb( NtCurrentTeb() ), context );
+}
+
+static NTSTATUS initialize(void)
+{
+    HMODULE module;
+    UNICODE_STRING str;
+    NTSTATUS status;
+
+    RtlInitUnicodeString( &str, L"libhofex" );
+    status = LdrLoadDll( NULL, 0, &str, &module );
+    if (!NT_SUCCESS( status ))
+        return status;
+
+#define LOAD_FUNCPTR(f) if((p##f = (void *)RtlFindExportedRoutineByName( module, #f )) == NULL) {ERR( #f " %p\n", p##f );return STATUS_ENTRYPOINT_NOT_FOUND;}
+    LOAD_FUNCPTR(ho_A);
+    LOAD_FUNCPTR(ho_B);
+    LOAD_FUNCPTR(ho_invalidate_code_range);
+#undef LOAD_FUNCPTR
+
+    pho_A();
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS WINAPI Wow64SystemServiceEx( UINT num, UINT *args );
 
 #if 1
 // pausehandler
-static const UINT16 bopcode = 0x80cd;
-static const UINT16 unxcode = 0x80cd;
+static const UINT16 bopcode = 0x2ecd;
+static const UINT16 unxcode = 0x2ecd;
 #else
 // thunks
 static const UINT16 bopcode = 0x3f0f;
@@ -128,19 +145,8 @@ void WINAPI BTCpuSimulate(void)
 
     TRACE( "START %p %08lx\n", wow_context, wow_context->Eip );
 
-    ret = emu_run(wow_context);
-    if (ret)
-   {
-        EXCEPTION_RECORD rec;
 
-        ERR("emu_run returned %08lx\n", ret);
-        rec.ExceptionCode    = ret;
-        rec.ExceptionFlags   = 0;
-        rec.ExceptionRecord  = NULL;
-        rec.ExceptionAddress = ULongToPtr(wow_context->Eip);
-        rec.NumberParameters = 0;
-        RtlRaiseException( &rec );
-    }
+    emu_run( wow_context );
 
     if (ULongToPtr(wow_context->Eip) == &unxcode)
     {
@@ -258,9 +264,9 @@ static NTSTATUS invalidate_mapped_section( PVOID addr )
     if (!NT_SUCCESS(ret))
         return ret;
 
-
-    return invalidate_code_range( (DWORD64)mem_info.AllocationBase,
-                                  (DWORD64)(mem_info.BaseAddress + mem_info.RegionSize - mem_info.AllocationBase) );
+    pho_invalidate_code_range( (DWORD64)mem_info.AllocationBase,
+                               (DWORD64)mem_info.BaseAddress + mem_info.RegionSize - (DWORD64)mem_info.AllocationBase );
+    return STATUS_SUCCESS;
 }
 
 /**********************************************************************
@@ -278,16 +284,17 @@ void WINAPI BTCpuNotifyUnmapViewOfSection( PVOID addr, ULONG flags )
  */
 void WINAPI BTCpuNotifyMemoryFree( PVOID addr, SIZE_T size, ULONG free_type )
 {
-    NTSTATUS ret;
-
     if (!size)
-        ret = invalidate_mapped_section( addr );
+    {
+        NTSTATUS ret = invalidate_mapped_section( addr );
+        if (!NT_SUCCESS(ret))
+            WARN( "Failed to invalidate code memory: %#lx\n", ret );
+    }
     else if (free_type & MEM_DECOMMIT)
+    {
         /* Invalidate all pages touched by the region, even if they are just straddled */
-        ret = invalidate_code_range( (DWORD64)ROUND_ADDR( addr, page_mask ), (DWORD64)ROUND_SIZE( addr, size ) );
-
-    if (!NT_SUCCESS(ret))
-        WARN( "Failed to invalidate code memory: 0x%x\n", ret );
+        pho_invalidate_code_range( (DWORD64)ROUND_ADDR( addr, page_mask ), (DWORD64)ROUND_SIZE( addr, size ) );
+    }
 }
 
 /**********************************************************************
@@ -295,14 +302,11 @@ void WINAPI BTCpuNotifyMemoryFree( PVOID addr, SIZE_T size, ULONG free_type )
  */
 void WINAPI BTCpuNotifyMemoryProtect( PVOID addr, SIZE_T size, DWORD new_protect )
 {
-    NTSTATUS ret;
     if (!(new_protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)))
         return;
 
     /* Invalidate all pages touched by the region, even if they are just straddled */
-    ret = invalidate_code_range( (DWORD64)ROUND_ADDR( addr, page_mask ), (DWORD64)ROUND_SIZE( addr, size ) );
-    if (!NT_SUCCESS(ret))
-        WARN( "Failed to invalidate code memory: 0x%x\n", ret );
+    pho_invalidate_code_range( (DWORD64)ROUND_ADDR( addr, page_mask ), (DWORD64)ROUND_SIZE( addr, size ) );
 }
 
 /**********************************************************************
@@ -310,12 +314,8 @@ void WINAPI BTCpuNotifyMemoryProtect( PVOID addr, SIZE_T size, DWORD new_protect
  */
 void WINAPI BTCpuFlushInstructionCache2( LPCVOID addr, SIZE_T size)
 {
-    NTSTATUS ret;
-
     /* Invalidate all pages touched by the region, even if they are just straddled */
-    ret = invalidate_code_range( (DWORD64)addr, (DWORD64)size );
-    if (!NT_SUCCESS(ret))
-        WARN( "Failed to invalidate code memory: 0x%x\n", ret );
+    pho_invalidate_code_range( (DWORD64)addr, (DWORD64)size );
 }
 
 BOOL WINAPI DllMain (HINSTANCE inst, DWORD reason, void *reserved )
@@ -325,16 +325,12 @@ BOOL WINAPI DllMain (HINSTANCE inst, DWORD reason, void *reserved )
     switch (reason)
     {
         case DLL_PROCESS_ATTACH:
-            LdrDisableThreadCalloutsForDll(inst);
-            if (NtQueryVirtualMemory( GetCurrentProcess(), inst, MemoryWineUnixFuncs,
-                                      &emuapi_handle, sizeof(emuapi_handle), NULL ))
-                return FALSE;
-            if (EMUAPI_CALL( attach, NULL ))
-                return FALSE;
+            LdrDisableThreadCalloutsForDll( inst );
+            initialize();
             break;
         case DLL_PROCESS_DETACH:
             if (reserved) break;
-            EMUAPI_CALL( detach, NULL );
+            ERR( "Implement detach\n" );
             break;
     }
 
