@@ -34,6 +34,9 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(wow);
 
+/* See fexcore cpu.c */
+#define CONTEXT_I386_HAS_HOST_CONTEXT (1 << 30)
+
 USHORT native_machine = 0;
 USHORT current_machine = 0;
 ULONG_PTR args_alignment = 0;
@@ -256,6 +259,7 @@ static void call_user_exception_dispatcher( EXCEPTION_RECORD32 *rec, void *ctx32
                     memcpy( &dst_xs->YmmContext, &src_xs->YmmContext, sizeof(dst_xs->YmmContext) );
             }
 
+            ctx.ContextFlags &= ~CONTEXT_I386_HAS_HOST_CONTEXT;
             ctx.Esp = PtrToUlong( stack );
             ctx.Eip = pLdrSystemDllInitBlock->pKiUserExceptionDispatcher;
             ctx.EFlags &= ~(0x100|0x400|0x40000);
