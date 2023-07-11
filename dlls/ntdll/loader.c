@@ -4228,6 +4228,9 @@ void WINAPI LdrInitializeThunk( CONTEXT *context, ULONG_PTR unknown2, ULONG_PTR 
 
         build_ntdll_module( meminfo.AllocationBase );
 
+        actctx_init();
+        locale_init();
+
         if (NtCurrentTeb()->WowTebOffset) init_wow64( context );
 
         if ((status = load_dll( NULL, L"kernel32.dll", 0, &kernel32, FALSE )) != STATUS_SUCCESS)
@@ -4244,8 +4247,6 @@ void WINAPI LdrInitializeThunk( CONTEXT *context, ULONG_PTR unknown2, ULONG_PTR 
         }
         LdrGetProcedureAddress( kernel32->ldr.DllBase, &ctrl_routine, 0, (void **)&pCtrlRoutine );
 
-        actctx_init();
-        locale_init();
         if (wm->ldr.Flags & LDR_COR_ILONLY)
             status = fixup_imports_ilonly( wm, NULL, entry );
         else
