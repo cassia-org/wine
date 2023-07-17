@@ -71,7 +71,7 @@ static NTSTATUS initialize(void)
     NTSTATUS status;
 
     RtlInitUnicodeString( &str, L"libhofex" );
-    status = LdrLoadDll( NULL, 0, &str, &module );
+    status = LdrLoadDll( L"C:\\windows\\system32\\", 0, &str, &module );
     if (!NT_SUCCESS( status ))
         return status;
 
