@@ -41,6 +41,9 @@ static const UINT_PTR page_mask = 0xfff;
 /* Used to indicate that an i386 context contains a 'host_restore_stack_layout' struct on its stack, which should be used in BTCpuSimulate to return from an exception */
 #define CONTEXT_I386_HAS_HOST_CONTEXT (1 << 30)
 
+/* Stores a pointer to the host context as it was just before JIT entry, used to allow guest exceptions to unwind to the wow exception handler */
+#define FEXCORE_TLS_ENTRY_CTX 12
+
 static void (*pho_init)(void);
 static void (*pho_run)( DWORD64 teb, I386_CONTEXT *ctx );
 static void (*pho_invalidate_code_range)( DWORD64 start, DWORD64 length );
@@ -61,6 +64,10 @@ static void *get_wow_teb( TEB *teb )
 
 static void emu_run( I386_CONTEXT *context )
 {
+    CONTEXT entry_context;
+
+    RtlCaptureContext(&entry_context);
+    NtCurrentTeb()->TlsSlots[FEXCORE_TLS_ENTRY_CTX] = &entry_context;
     pho_run( (DWORD64)get_wow_teb( NtCurrentTeb() ), context );
 }
 
@@ -253,16 +260,16 @@ NTSTATUS WINAPI BTCpuResetToConsistentState( EXCEPTION_POINTERS *ptrs )
     CONTEXT *context = ptrs->ContextRecord;
     EXCEPTION_RECORD *exception = ptrs->ExceptionRecord;
     I386_CONTEXT wow_context;
+    CONTEXT *entry_context = NtCurrentTeb()->TlsSlots[FEXCORE_TLS_ENTRY_CTX];
 
     if (exception->ExceptionCode == EXCEPTION_DATATYPE_MISALIGNMENT && pho_unaligned_access_handler( context ))
         NtContinue( context, FALSE );
 
     if (!pho_address_in_jit( context->Pc )) return STATUS_SUCCESS;
 
-    TRACE( "Exception under guest %#llx\n", context->Pc );
-
     FIXME( "Reconstructing context\n" );
     pho_reconstruct_x86_context( &wow_context, context );
+    TRACE( "pc: %#llx eip: %#x\n", context->Pc, wow_context.Eip );
 
     /* Store host state to stack to allow for correctly resuming from synchronous exceptions */
     wow_context.ContextFlags |= CONTEXT_I386_HAS_HOST_CONTEXT;
@@ -274,7 +281,9 @@ NTSTATUS WINAPI BTCpuResetToConsistentState( EXCEPTION_POINTERS *ptrs )
 
     BTCpuSetContext( GetCurrentThread(), GetCurrentProcess(), NULL, &wow_context );
 
-    /* TODO: fixup context */
+    /* Replace the host context with one captured before JIT entry so host code can unwind */
+    memcpy(context, entry_context, sizeof(*context));
+
     return STATUS_SUCCESS;
 }
 
