@@ -38,9 +38,6 @@ static const UINT_PTR page_mask = 0xfff;
 #define ROUND_ADDR(addr,mask) ((void *)((UINT_PTR)(addr) & ~(UINT_PTR)(mask)))
 #define ROUND_SIZE(addr,size) (((SIZE_T)(size) + ((UINT_PTR)(addr) & page_mask) + page_mask) & ~page_mask)
 
-/* Used to indicate that an i386 context contains a 'host_restore_stack_layout' struct on its stack, which should be used in BTCpuSimulate to return from an exception */
-#define CONTEXT_I386_HAS_HOST_CONTEXT (1 << 30)
-
 /* Stores a pointer to the host context as it was just before JIT entry, used to allow guest exceptions to unwind to the wow exception handler */
 #define FEXCORE_TLS_ENTRY_CTX 12
 
@@ -50,12 +47,6 @@ static void (*pho_invalidate_code_range)( DWORD64 start, DWORD64 length );
 static void (*pho_reconstruct_x86_context)( I386_CONTEXT *wow_context, CONTEXT *context );
 static BOOLEAN (*pho_unaligned_access_handler)( CONTEXT *context );
 static BOOLEAN (*pho_address_in_jit)( DWORD64 addr );
-
-struct host_restore_stack_layout {
-    DWORD saved_eip;
-    DWORD pad;
-    CONTEXT arm_context;
-};
 
 static void *get_wow_teb( TEB *teb )
 {
@@ -151,27 +142,6 @@ void WINAPI BTCpuSimulate(void)
     NTSTATUS ret;
 
     RtlWow64GetCurrentCpuArea( NULL, (void **)&wow_context, NULL );
-
-    if (wow_context->ContextFlags & CONTEXT_I386_HAS_HOST_CONTEXT)
-    {
-        struct host_restore_stack_layout *stack = (struct host_restore_stack_layout *)(wow_context->Esp);
-
-        /* Restore context to initial state */
-        wow_context->ContextFlags &= ~CONTEXT_I386_HAS_HOST_CONTEXT;
-        wow_context->Esp += sizeof(struct host_restore_stack_layout);
-
-        /* If an exception handler has changed the EIP, hope that the reconstructed context will be
-         * enough, otherwise continue from the host context */
-        if (stack->saved_eip == wow_context->Eip)
-        {
-            FIXME( "Continuing with host context: %#lx\n", wow_context->Eip );
-            NtContinue( &stack->arm_context, FALSE );
-        }
-        else
-        {
-            FIXME( "Continuing with reconstructed context: %#lx\n", wow_context->Eip );
-        }
-    }
 
     emu_run( wow_context );
 
@@ -271,18 +241,10 @@ NTSTATUS WINAPI BTCpuResetToConsistentState( EXCEPTION_POINTERS *ptrs )
     pho_reconstruct_x86_context( &wow_context, context );
     TRACE( "pc: %#llx eip: %#x\n", context->Pc, wow_context.Eip );
 
-    /* Store host state to stack to allow for correctly resuming from synchronous exceptions */
-    wow_context.ContextFlags |= CONTEXT_I386_HAS_HOST_CONTEXT;
-    wow_context.Esp -= sizeof(struct host_restore_stack_layout);
-
-    stack = (struct host_restore_stack_layout *)(wow_context.Esp);
-    stack->saved_eip = wow_context.Eip;
-    stack->arm_context = *context;
-
     BTCpuSetContext( GetCurrentThread(), GetCurrentProcess(), NULL, &wow_context );
 
     /* Replace the host context with one captured before JIT entry so host code can unwind */
-    memcpy(context, entry_context, sizeof(*context));
+    memcpy( context, entry_context, sizeof(*context) );
 
     return STATUS_SUCCESS;
 }
