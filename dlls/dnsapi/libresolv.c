@@ -24,7 +24,7 @@
 
 #include "config.h"
 
-#ifdef HAVE_RESOLV
+#if defined(HAVE_RESOLV) || defined(HAVE_ARESOLV_H)
 #include <stdarg.h>
 #include <string.h>
 #include <stdio.h>
@@ -39,6 +39,9 @@
 #endif
 #ifdef HAVE_RESOLV_H
 # include <resolv.h>
+#endif
+#ifdef HAVE_ARESOLV_H
+#include <aresolv.h>
 #endif
 #ifdef HAVE_NETDB_H
 # include <netdb.h>
@@ -63,7 +66,11 @@ WINE_DEFAULT_DEBUG_CHANNEL(dnsapi);
 /* call once per thread on systems that have per-thread _res */
 static void init_resolver( void )
 {
+#ifndef HAVE_ARESOLV_H
     if (!(_res.options & RES_INIT)) res_init();
+#else
+    if (!(_res.options & RES_INIT)) res_ninit(&_res);
+#endif
 }
 
 static unsigned long map_options( DWORD options )
@@ -329,7 +336,11 @@ static NTSTATUS resolv_query( void *args )
     init_resolver();
     _res.options |= map_options( params->options );
 
+#ifndef HAVE_ARESOLV_H
     if ((len = res_query( params->name, ns_c_in, params->type, params->buf, *params->len )) < 0)
+#else
+    if ((len = res_nquery( &_res, params->name, ns_c_in, params->type, params->buf, *params->len )) < 0)
+#endif
         ret = map_h_errno( h_errno );
     else
         *params->len = len;

@@ -740,6 +740,9 @@ case $host_os in
     WINE_PACKAGE_FLAGS(ADRENOTOOLS,[adrenotools],,,,
         [AC_CHECK_HEADERS([adrenotools/driver.h])
          AC_CHECK_LIB(adrenotools,adrenotools_open_libvulkan,[:],[ADRENOTOOLS_LIBS=""],[$ADRENOTOOLS_LIBS])])
+    WINE_PACKAGE_FLAGS(ARESOLV,[aresolv],,,,
+        [AC_CHECK_HEADERS([aresolv.h])
+         AC_CHECK_LIB(aresolv,res_init,[:],[ARESOLV_LIBS=""],[$ARESOLV_LIBS])])
 
     if test "x$exec_prefix" = xNONE
     then

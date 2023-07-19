@@ -2,7 +2,8 @@ MODULE    = dnsapi.dll
 UNIXLIB   = dnsapi.so
 IMPORTLIB = dnsapi
 DELAYIMPORTS = netapi32
-UNIX_LIBS    = $(RESOLV_LIBS)
+UNIX_LIBS    = $(RESOLV_LIBS) $(ARESOLV_LIBS)
+UNIX_CFLAGS = $(ARESOLV_CFLAGS)
 
 C_SRCS = \
 	libresolv.c \
