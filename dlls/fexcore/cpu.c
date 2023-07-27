@@ -41,12 +41,23 @@ static const UINT_PTR page_mask = 0xfff;
 /* Stores a pointer to the host context as it was just before JIT entry, used to allow guest exceptions to unwind to the wow exception handler */
 #define FEXCORE_TLS_ENTRY_CTX 12
 
+/* Stores a control bitset to allow for modifying and observing the state of a WOW thread */
+#define FEXCORE_TLS_CONTROL_WORD 13
+
+/* The context stored in the WOW CPU area is guaranteed to be up-to-date if this bit is unset */
+#define CONTROL_IN_JIT 1LL
+
+/* JIT entry polls this bit until it is unset, at which point CONTROL_IN_JIT will be set */
+#define CONTROL_PAUSED 2LL
+
+
 static void (*pho_init)(void);
 static void (*pho_run)( DWORD64 teb, I386_CONTEXT *ctx );
 static void (*pho_invalidate_code_range)( DWORD64 start, DWORD64 length );
 static void (*pho_reconstruct_x86_context)( I386_CONTEXT *wow_context, CONTEXT *context );
 static BOOLEAN (*pho_unaligned_access_handler)( CONTEXT *context );
 static BOOLEAN (*pho_address_in_jit)( DWORD64 addr );
+static void (*pho_request_thread_return)( TEB *thread_teb );
 
 static void *get_wow_teb( TEB *teb )
 {
@@ -56,10 +67,20 @@ static void *get_wow_teb( TEB *teb )
 static void emu_run( I386_CONTEXT *context )
 {
     CONTEXT entry_context;
+    LONG64 *control_word = (LONG64 *)&NtCurrentTeb()->TlsSlots[FEXCORE_TLS_CONTROL_WORD];
+    LONG64 expected_val;
 
-    RtlCaptureContext(&entry_context);
+    RtlCaptureContext( &entry_context );
     NtCurrentTeb()->TlsSlots[FEXCORE_TLS_ENTRY_CTX] = &entry_context;
+
+    /* Spin until CONTROL_PAUSED is unset, setting CONTROL_IN_JIT when that occurs */
+    do {
+        expected_val = *control_word & ~CONTROL_PAUSED;
+    } while (InterlockedCompareExchange64( control_word, expected_val | CONTROL_IN_JIT, expected_val ) != expected_val);
+
     pho_run( (DWORD64)get_wow_teb( NtCurrentTeb() ), context );
+
+    InterlockedAnd64( control_word, ~CONTROL_IN_JIT );
 }
 
 static NTSTATUS initialize(void)
@@ -80,6 +101,7 @@ static NTSTATUS initialize(void)
     LOAD_FUNCPTR(ho_reconstruct_x86_context);
     LOAD_FUNCPTR(ho_unaligned_access_handler);
     LOAD_FUNCPTR(ho_address_in_jit);
+    LOAD_FUNCPTR(ho_request_thread_return);
 #undef LOAD_FUNCPTR
 
     pho_init();
@@ -155,20 +177,62 @@ void WINAPI BTCpuSimulate(void)
         /* sys call */
         handle_syscall( wow_context );
     }
-    else
-    {
-        DWORD arg[] = {0xffffffff, 1};
-
-        ERR( "Client crashed\n" );
-        ERR( "EIP %p\n", ULongToPtr( wow_context->Eip ) );
-        ERR( "bop %p\n", &bopcode );
-
-        /* NtTerminateProcess */
-        Wow64SystemServiceEx( 212, (UINT*)&arg );
-        return;
-    }
 }
 
+
+/**********************************************************************
+ *            BTCpuSuspendLocalThread (xtajit.@)
+ */
+NTSTATUS WINAPI BTCpuSuspendLocalThread( HANDLE thread, ULONG *count )
+{
+    THREAD_BASIC_INFORMATION tbi;
+    TEB *thread_teb;
+    LONG64 *control_word;
+    CONTEXT tmp_context;
+    NTSTATUS ret = NtQueryInformationThread( thread, ThreadBasicInformation, &tbi, sizeof(tbi), NULL);
+    if (ret) return ret;
+
+    thread_teb = tbi.TebBaseAddress;
+    control_word = (LONG64 *)&thread_teb->TlsSlots[FEXCORE_TLS_CONTROL_WORD];
+
+    TRACE( "Suspending thread: %p\n", thread_teb->ClientId.UniqueThread );
+
+    InterlockedOr64( control_word, CONTROL_PAUSED );
+
+    /* If CONTROL_IN_JIT is unset at this point, then it can never be set (and thus the JIT cannot
+     * be reentered) as CONTROL_PAUSED has been set, as such, while this may redundantly request
+     * returns in rare cases it will never miss them */
+    if (*control_word & CONTROL_IN_JIT)
+    {
+        TRACE( "Thread %p is in JIT, polling for return\n", thread_teb->ClientId.UniqueThread );
+        pho_request_thread_return( thread_teb );
+    }
+
+    /* Spin until the JIT returns */
+    while (InterlockedOr64( control_word, 0 ) & CONTROL_IN_JIT);
+
+    /* The JIT has now returned and the context stored in the thread's CPU area is up-to-date */
+    ret = NtSuspendThread( thread, count );
+    if (ret)
+        goto end;
+
+    tmp_context.ContextFlags = CONTEXT_INTEGER;
+
+    /* NtSuspendThread may return before the thread is actually suspended, so a sync operation
+     * like NtGetContextThread needs to be called to ensure it is before we unset CONTROL_PAUSED */
+    (void)NtGetContextThread( thread, &tmp_context );
+
+end:
+    TRACE( "Thread suspended: %p\n", thread_teb->ClientId.UniqueThread );
+
+    if ( *control_word & CONTROL_IN_JIT ) ERR( "Suspend failed!\n" );
+
+    /* Now the thread is suspended on the host, unset CONTROL_PAUSED so that NtResumeThread will
+     * continue execution in the JIT */
+    InterlockedAnd64( control_word, ~CONTROL_PAUSED );
+
+    return ret;
+}
 
 /**********************************************************************
  *           BTCpuProcessInit  (xtajit.@)
@@ -231,6 +295,7 @@ NTSTATUS WINAPI BTCpuResetToConsistentState( EXCEPTION_POINTERS *ptrs )
     EXCEPTION_RECORD *exception = ptrs->ExceptionRecord;
     I386_CONTEXT wow_context;
     CONTEXT *entry_context = NtCurrentTeb()->TlsSlots[FEXCORE_TLS_ENTRY_CTX];
+    LONG64 *control_word = (LONG64 *)&NtCurrentTeb()->TlsSlots[FEXCORE_TLS_CONTROL_WORD];
 
     if (exception->ExceptionCode == EXCEPTION_DATATYPE_MISALIGNMENT && pho_unaligned_access_handler( context ))
         NtContinue( context, FALSE );
@@ -242,6 +307,8 @@ NTSTATUS WINAPI BTCpuResetToConsistentState( EXCEPTION_POINTERS *ptrs )
     TRACE( "pc: %#llx eip: %#x\n", context->Pc, wow_context.Eip );
 
     BTCpuSetContext( GetCurrentThread(), GetCurrentProcess(), NULL, &wow_context );
+
+    InterlockedAnd64( control_word, ~CONTROL_IN_JIT );
 
     /* Replace the host context with one captured before JIT entry so host code can unwind */
     memcpy( context, entry_context, sizeof(*context) );
