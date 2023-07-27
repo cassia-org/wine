@@ -1517,6 +1517,7 @@ enable_wofutil
 enable_wow64
 enable_wow64cpu
 enable_wow64win
+enable_fexcore
 enable_wpc
 enable_wpcap
 enable_ws2_32
@@ -6380,6 +6381,7 @@ enable_win64=${enable_win64:-no}
 enable_wow64=${enable_wow64:-aarch64,x86_64}
 enable_wow64win=${enable_wow64win:-aarch64,x86_64}
 enable_wow64cpu=${enable_wow64cpu:-x86_64}
+enable_fexcore=${enable_fexcore:-aarch64}
 
 enable_winetest=${enable_winetest:-$enable_tests}
 
@@ -21075,7 +21077,7 @@ test "$srcdir" = . || wine_srcdir="$srcdir/"
 
 ac_config_links="$ac_config_links wine:tools/winewrapper"
 wine_fn_config_symlink wine
-if test "$wine_binary" = wine64 -o -n "$with_wine64"; then
+if test "$HOST_ARCH" = x86_64 -o -n "$with_wine64"; then
 ac_config_links="$ac_config_links wine64:tools/winewrapper"
 wine_fn_config_symlink wine64
 fi
@@ -21963,6 +21965,7 @@ wine_fn_config_makefile dlls/wow32 enable_win16
 wine_fn_config_makefile dlls/wow64 enable_wow64
 wine_fn_config_makefile dlls/wow64cpu enable_wow64cpu
 wine_fn_config_makefile dlls/wow64win enable_wow64win
+wine_fn_config_makefile dlls/fexcore enable_fexcore
 wine_fn_config_makefile dlls/wpc enable_wpc
 wine_fn_config_makefile dlls/wpc/tests enable_tests
 wine_fn_config_makefile dlls/wpcap enable_wpcap
