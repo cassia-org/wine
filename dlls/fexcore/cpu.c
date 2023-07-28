@@ -58,6 +58,8 @@ static void (*pho_reconstruct_x86_context)( I386_CONTEXT *wow_context, CONTEXT *
 static BOOLEAN (*pho_unaligned_access_handler)( CONTEXT *context );
 static BOOLEAN (*pho_address_in_jit)( DWORD64 addr );
 static void (*pho_request_thread_return)( TEB *thread_teb );
+static void (*pho_thread_init)(void);
+static void (*pho_thread_terminate)( TEB *thread_teb );
 
 static void *get_wow_teb( TEB *teb )
 {
@@ -102,6 +104,8 @@ static NTSTATUS initialize(void)
     LOAD_FUNCPTR(ho_unaligned_access_handler);
     LOAD_FUNCPTR(ho_address_in_jit);
     LOAD_FUNCPTR(ho_request_thread_return);
+    LOAD_FUNCPTR(ho_thread_init);
+    LOAD_FUNCPTR(ho_thread_terminate);
 #undef LOAD_FUNCPTR
 
     pho_init();
@@ -252,6 +256,21 @@ NTSTATUS WINAPI BTCpuProcessInit(void)
  */
 NTSTATUS WINAPI BTCpuThreadInit(void)
 {
+    pho_thread_init();
+    return STATUS_SUCCESS;
+}
+
+/**********************************************************************
+ *           BTCpuThreadInit  (xtajit.@)
+ */
+NTSTATUS WINAPI BTCpuThreadTerm( HANDLE thread )
+{
+    THREAD_BASIC_INFORMATION tbi;
+    NTSTATUS ret = NtQueryInformationThread( thread, ThreadBasicInformation, &tbi, sizeof(tbi), NULL);
+    if (ret) return ret;
+
+    pho_thread_terminate( tbi.TebBaseAddress );
+
     return STATUS_SUCCESS;
 }
 
