@@ -1144,7 +1144,10 @@ static DNS_STATUS extract_message_records( const DNS_MESSAGE_BUFFER *buffer, WOR
     const BYTE *ptr = (const BYTE *)buffer->MessageBody;
     unsigned int num;
 
-    if (hdr->IsResponse && !hdr->AnswerCount) return DNS_ERROR_BAD_PACKET;
+    if (hdr->IsResponse && !hdr->AnswerCount)
+      ret = DNS_INFO_NO_RECORDS; /* The DNS server can return an empty packet
+                                    that's still valid but doesn't contain any
+                                    records */
 
     for (num = 0; num < hdr->QuestionCount; num++)
         if (!(ptr = skip_record( ptr, end, DnsSectionQuestion ))) return DNS_ERROR_BAD_PACKET;
