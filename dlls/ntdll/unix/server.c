@@ -1390,14 +1390,15 @@ static int server_connect(void)
         {
             usleep( 100000 * retry * retry );
             start_server( TRACE_ON(server) );
-            if (lstat( SOCKETNAME, &st ) == -1) continue;  /* still no socket, wait a bit more */
         }
+#ifndef WINESERVER_ABSTRACT_SOCKET
         else if (lstat( SOCKETNAME, &st ) == -1) /* check for an already existing socket */
         {
             if (errno != ENOENT) fatal_perror( "lstat %s/%s", server_dir, SOCKETNAME );
             start_server( TRACE_ON(server) );
-            if (lstat( SOCKETNAME, &st ) == -1) continue;  /* still no socket, wait a bit more */
         }
+
+        if (lstat( SOCKETNAME, &st ) == -1) continue;  /* still no socket, wait a bit more */
 
         /* make sure the socket is sane (ISFIFO needed for Solaris) */
         if (!S_ISSOCK(st.st_mode) && !S_ISFIFO(st.st_mode))
@@ -1409,6 +1410,13 @@ static int server_connect(void)
         addr.sun_family = AF_UNIX;
         strcpy( addr.sun_path, SOCKETNAME );
         slen = sizeof(addr) - sizeof(addr.sun_path) + strlen(addr.sun_path) + 1;
+#else  /* WINESERVER_ABSTRACT_SOCKET */
+        addr.sun_family = AF_UNIX;
+        addr.sun_path[0] = 0; // abstract namespace
+        strcpy( addr.sun_path + 1, SOCKETNAME );
+        slen = sizeof(addr) - sizeof(addr.sun_path) + strlen(addr.sun_path + 1) + 2;
+#endif
+
 #ifdef HAVE_STRUCT_SOCKADDR_UN_SUN_LEN
         addr.sun_len = slen;
 #endif

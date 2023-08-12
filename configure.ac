@@ -728,6 +728,7 @@ case $host_os in
 
   linux-android*)
     AC_DEFINE(_GNU_SOURCE,1,[Define to 1 to enable GNU extensions on Linux])
+    AC_DEFINE(WINESERVER_ABSTRACT_SOCKET,1,[Define to 1 to use abstract sockets for wineserver])
     DLLFLAGS="$DLLFLAGS -fPIC"
     LDDLLFLAGS="-fPIC"
     LDEXECFLAGS="-Wl,-pie"

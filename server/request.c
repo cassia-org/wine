@@ -587,12 +587,14 @@ static void master_socket_poll_event( struct fd *fd, int event )
     }
 }
 
+#ifndef WINESERVER_ABSTRACT_SOCKET
 /* remove the socket upon exit */
 static void socket_cleanup(void)
 {
     static int do_it_once;
     if (!do_it_once++) unlink( server_socket_name );
 }
+#endif
 
 /* create a directory and check its permissions */
 static void create_dir( const char *name, struct stat *st )
@@ -844,8 +846,14 @@ static void acquire_lock(void)
 
     if ((fd = socket( AF_UNIX, SOCK_STREAM, 0 )) == -1) fatal_error( "socket: %s\n", strerror( errno ));
     addr.sun_family = AF_UNIX;
+#ifndef WINESERVER_ABSTRACT_SOCKET
     strcpy( addr.sun_path, server_socket_name );
     slen = sizeof(addr) - sizeof(addr.sun_path) + strlen(addr.sun_path) + 1;
+#else
+    addr.sun_path[0] = 0; // abstract namespace
+    strcpy( addr.sun_path + 1, server_socket_name );
+    slen = sizeof(addr) - sizeof(addr.sun_path) + strlen(addr.sun_path + 1) + 2;
+#endif
 #ifdef HAVE_STRUCT_SOCKADDR_UN_SUN_LEN
     addr.sun_len = slen;
 #endif
@@ -859,8 +867,10 @@ static void acquire_lock(void)
         }
         fatal_error( "bind: %s\n", strerror( errno ));
     }
+#ifndef WINESERVER_ABSTRACT_SOCKET
     atexit( socket_cleanup );
     chmod( server_socket_name, 0600 );  /* make sure no other user can connect */
+#endif
     if (listen( fd, 5 ) == -1) fatal_error( "listen: %s\n", strerror( errno ));
 
     if (!(master_socket = alloc_object( &master_socket_ops )) ||
