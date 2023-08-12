@@ -806,6 +806,9 @@
    backward compatibility; new code need not use it. */
 #undef STDC_HEADERS
 
+/* Define to 1 to use abstract sockets for wineserver */
+#undef WINESERVER_ABSTRACT_SOCKET
+
 /* Define if xattr functions take additional arguments (macOS) */
 #undef XATTR_ADDITIONAL_OPTIONS
 
