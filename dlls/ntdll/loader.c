@@ -2200,7 +2200,7 @@ static NTSTATUS perform_relocations( void *module, IMAGE_NT_HEADERS *nt, SIZE_T 
         void *addr = get_rva( module, sec[i].VirtualAddress );
         SIZE_T size = sec[i].SizeOfRawData;
         NtProtectVirtualMemory( NtCurrentProcess(), &addr,
-                                &size, PAGE_READWRITE, &protect_old[i] );
+                                &size, PAGE_EXECUTE_READWRITE, &protect_old[i] );
     }
 
     TRACE( "relocating from %p-%p to %p-%p\n",
