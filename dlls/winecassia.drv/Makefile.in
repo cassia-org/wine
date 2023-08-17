@@ -1,8 +1,10 @@
 MODULE      = winecassia.drv
 UNIXLIB     = winecassia.so
 IMPORTS     = ntoskrnl
-UNIX_LIBS   = -lwin32u -landroid -lsync $(PTHREAD_LIBS)
+UNIX_LIBS   = -lwin32u -landroid -lsync $(PTHREAD_LIBS) $(ADRENOTOOLS_LIBS)
+UNIX_CFLAGS = $(ADRENOTOOLS_CFLAGS)
 
 C_SRCS = \
 	dllmain.c \
-	init.c
+	init.c \
+	vulkan.c
