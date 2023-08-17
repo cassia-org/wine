@@ -744,6 +744,8 @@ FAUDIO_PE_LIBS
 FAUDIO_PE_CFLAGS
 MINGW_PKG_CONFIG
 PE_ARCHS
+ADRENOTOOLS_LIBS
+ADRENOTOOLS_CFLAGS
 WINELOADER_DEPENDS
 ac_ct_OBJC
 OBJCFLAGS
@@ -1479,6 +1481,7 @@ enable_windowscodecsext
 enable_winealsa_drv
 enable_wineandroid_drv
 enable_winebus_sys
+enable_winecassia_drv
 enable_winecoreaudio_drv
 enable_winecrt0
 enable_wined3d
@@ -1737,6 +1740,8 @@ CXXFLAGS
 CCC
 OBJC
 OBJCFLAGS
+ADRENOTOOLS_CFLAGS
+ADRENOTOOLS_LIBS
 FAUDIO_PE_CFLAGS
 FAUDIO_PE_LIBS
 GSM_PE_CFLAGS
@@ -2516,6 +2521,10 @@ Some influential environment variables:
   CXXFLAGS    C++ compiler flags
   OBJC        Objective C compiler command
   OBJCFLAGS   Objective C compiler flags
+  ADRENOTOOLS_CFLAGS
+              C compiler flags for adrenotools, overriding pkg-config
+  ADRENOTOOLS_LIBS
+              Linker flags for adrenotools, overriding pkg-config
   FAUDIO_PE_CFLAGS
               C compiler flags for the PE faudio, overriding the bundled
               version
@@ -5922,11 +5931,11 @@ if test x$ac_prog_cxx_stdcxx = xno
 then :
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $CXX option to enable C++11 features" >&5
 printf %s "checking for $CXX option to enable C++11 features... " >&6; }
-if test ${ac_cv_prog_cxx_cxx11+y}
+if test ${ac_cv_prog_cxx_11+y}
 then :
   printf %s "(cached) " >&6
 else $as_nop
-  ac_cv_prog_cxx_cxx11=no
+  ac_cv_prog_cxx_11=no
 ac_save_CXX=$CXX
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
@@ -5968,11 +5977,11 @@ if test x$ac_prog_cxx_stdcxx = xno
 then :
   { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $CXX option to enable C++98 features" >&5
 printf %s "checking for $CXX option to enable C++98 features... " >&6; }
-if test ${ac_cv_prog_cxx_cxx98+y}
+if test ${ac_cv_prog_cxx_98+y}
 then :
   printf %s "(cached) " >&6
 else $as_nop
-  ac_cv_prog_cxx_cxx98=no
+  ac_cv_prog_cxx_98=no
 ac_save_CXX=$CXX
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
@@ -9870,10 +9879,13 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 printf "%s\n" "#define _GNU_SOURCE 1" >>confdefs.h
 
+
+printf "%s\n" "#define WINESERVER_ABSTRACT_SOCKET 1" >>confdefs.h
+
     DLLFLAGS="$DLLFLAGS -fPIC"
     LDDLLFLAGS="-fPIC"
     LDEXECFLAGS="-Wl,-pie"
-    enable_wineandroid_drv=${enable_wineandroid_drv:-yes}
+    enable_winecassia_drv=${enable_winecassia_drv:-yes}
     { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wl,-z,defs" >&5
 printf %s "checking whether the compiler supports -Wl,-z,defs... " >&6; }
 if test ${ac_cv_cflags__Wl__z_defs+y}
@@ -9932,114 +9944,84 @@ then :
 fi
     WINEPRELOADER_LDFLAGS="-static -nostartfiles -nodefaultlibs -Wl,-Ttext=0x7d400000"
 
-    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for -lEGL" >&5
-printf %s "checking for -lEGL... " >&6; }
-if test ${ac_cv_lib_soname_EGL+y}
+    rm -f conftest.err
+if ${ADRENOTOOLS_CFLAGS:+false} :
+then :
+  if test ${PKG_CONFIG+y}
+then :
+  ADRENOTOOLS_CFLAGS=`$PKG_CONFIG --cflags adrenotools 2>conftest.err`
+fi
+fi
+
+if ${ADRENOTOOLS_LIBS:+false} :
+then :
+  if test ${PKG_CONFIG+y}
+then :
+  ADRENOTOOLS_LIBS=`$PKG_CONFIG --libs adrenotools 2>/dev/null`
+fi
+fi
+
+
+printf "%s\n" "$as_me:${as_lineno-$LINENO}: adrenotools cflags: $ADRENOTOOLS_CFLAGS" >&5
+printf "%s\n" "$as_me:${as_lineno-$LINENO}: adrenotools libs: $ADRENOTOOLS_LIBS" >&5
+if test -s conftest.err; then
+     printf %s "$as_me:${as_lineno-$LINENO}: adrenotools errors: " >&5
+     cat conftest.err >&5
+fi
+rm -f conftest.err
+ac_save_CPPFLAGS=$CPPFLAGS
+CPPFLAGS="$CPPFLAGS $ADRENOTOOLS_CFLAGS"
+ac_fn_c_check_header_compile "$LINENO" "adrenotools/driver.h" "ac_cv_header_adrenotools_driver_h" "$ac_includes_default"
+if test "x$ac_cv_header_adrenotools_driver_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_ADRENOTOOLS_DRIVER_H 1" >>confdefs.h
+
+fi
+
+         { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for adrenotools_open_libvulkan in -ladrenotools" >&5
+printf %s "checking for adrenotools_open_libvulkan in -ladrenotools... " >&6; }
+if test ${ac_cv_lib_adrenotools_adrenotools_open_libvulkan+y}
 then :
   printf %s "(cached) " >&6
 else $as_nop
-  ac_check_soname_save_LIBS=$LIBS
-LIBS="-lEGL  $LIBS"
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-ladrenotools $ADRENOTOOLS_LIBS $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
 /* Override any GCC internal prototype to avoid an error.
    Use char because int might match the return type of a GCC
    builtin and then its argument prototype would still apply.  */
-char eglGetProcAddress ();
+char adrenotools_open_libvulkan ();
 int
 main (void)
 {
-return eglGetProcAddress ();
+return adrenotools_open_libvulkan ();
   ;
   return 0;
 }
 _ACEOF
 if ac_fn_c_try_link "$LINENO"
 then :
-  case "$LIBEXT" in
-    dll) ac_cv_lib_soname_EGL=`$ac_cv_path_LDD conftest.exe | grep "EGL" | sed -e "s/dll.*/dll/"';2,$d'` ;;
-    dylib) ac_cv_lib_soname_EGL=`$OTOOL -L conftest$ac_exeext | grep "libEGL\\.[0-9A-Za-z.]*dylib" | sed -e "s/^.*\/\(libEGL\.[0-9A-Za-z.]*dylib\).*$/\1/"';2,$d'` ;;
-    *) ac_cv_lib_soname_EGL=`$READELF -d conftest$ac_exeext | grep "NEEDED.*libEGL\\.$LIBEXT" | sed -e "s/^.*\\[\\(libEGL\\.$LIBEXT[^	 ]*\\)\\].*$/\1/"';2,$d'`
-       if ${ac_cv_lib_soname_EGL:+false} :
-then :
-  ac_cv_lib_soname_EGL=`$LDD conftest$ac_exeext | grep "libEGL\\.$LIBEXT" | sed -e "s/^.*\(libEGL\.$LIBEXT[^	 ]*\).*$/\1/"';2,$d'`
-fi ;;
-  esac
+  ac_cv_lib_adrenotools_adrenotools_open_libvulkan=yes
 else $as_nop
-  ac_cv_lib_soname_EGL=
+  ac_cv_lib_adrenotools_adrenotools_open_libvulkan=no
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam \
     conftest$ac_exeext conftest.$ac_ext
-  LIBS=$ac_check_soname_save_LIBS
+LIBS=$ac_check_lib_save_LIBS
 fi
-if ${ac_cv_lib_soname_EGL:+false} :
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_adrenotools_adrenotools_open_libvulkan" >&5
+printf "%s\n" "$ac_cv_lib_adrenotools_adrenotools_open_libvulkan" >&6; }
+if test "x$ac_cv_lib_adrenotools_adrenotools_open_libvulkan" = xyes
 then :
-  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: not found" >&5
-printf "%s\n" "not found" >&6; }
-
+  :
 else $as_nop
-  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_soname_EGL" >&5
-printf "%s\n" "$ac_cv_lib_soname_EGL" >&6; }
-
-printf "%s\n" "#define SONAME_LIBEGL \"$ac_cv_lib_soname_EGL\"" >>confdefs.h
-
-
+  ADRENOTOOLS_LIBS=""
 fi
-    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for -lGLESv2" >&5
-printf %s "checking for -lGLESv2... " >&6; }
-if test ${ac_cv_lib_soname_GLESv2+y}
-then :
-  printf %s "(cached) " >&6
-else $as_nop
-  ac_check_soname_save_LIBS=$LIBS
-LIBS="-lGLESv2  $LIBS"
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
 
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-char glFlush ();
-int
-main (void)
-{
-return glFlush ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"
-then :
-  case "$LIBEXT" in
-    dll) ac_cv_lib_soname_GLESv2=`$ac_cv_path_LDD conftest.exe | grep "GLESv2" | sed -e "s/dll.*/dll/"';2,$d'` ;;
-    dylib) ac_cv_lib_soname_GLESv2=`$OTOOL -L conftest$ac_exeext | grep "libGLESv2\\.[0-9A-Za-z.]*dylib" | sed -e "s/^.*\/\(libGLESv2\.[0-9A-Za-z.]*dylib\).*$/\1/"';2,$d'` ;;
-    *) ac_cv_lib_soname_GLESv2=`$READELF -d conftest$ac_exeext | grep "NEEDED.*libGLESv2\\.$LIBEXT" | sed -e "s/^.*\\[\\(libGLESv2\\.$LIBEXT[^	 ]*\\)\\].*$/\1/"';2,$d'`
-       if ${ac_cv_lib_soname_GLESv2:+false} :
-then :
-  ac_cv_lib_soname_GLESv2=`$LDD conftest$ac_exeext | grep "libGLESv2\\.$LIBEXT" | sed -e "s/^.*\(libGLESv2\.$LIBEXT[^	 ]*\).*$/\1/"';2,$d'`
-fi ;;
-  esac
-else $as_nop
-  ac_cv_lib_soname_GLESv2=
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.beam \
-    conftest$ac_exeext conftest.$ac_ext
-  LIBS=$ac_check_soname_save_LIBS
-fi
-if ${ac_cv_lib_soname_GLESv2:+false} :
-then :
-  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: not found" >&5
-printf "%s\n" "not found" >&6; }
+CPPFLAGS=$ac_save_CPPFLAGS
 
-else $as_nop
-  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_soname_GLESv2" >&5
-printf "%s\n" "$ac_cv_lib_soname_GLESv2" >&6; }
-
-printf "%s\n" "#define SONAME_LIBGLESV2 \"$ac_cv_lib_soname_GLESv2\"" >>confdefs.h
-
-
-fi
 
     if test "x$exec_prefix" = xNONE
     then
@@ -10267,6 +10249,7 @@ esac
 
 enable_winecoreaudio_drv=${enable_winecoreaudio_drv:-no}
 enable_wineandroid_drv=${enable_wineandroid_drv:-no}
+enable_winecassia_drv=${enable_winecassia_drv:-no}
 enable_winemac_drv=${enable_winemac_drv:-no}
 
 PE_ARCHS=""
@@ -15418,7 +15401,7 @@ else
     X_LIBS=""
 fi
 
-if test "$enable_wineandroid_drv$enable_winemac_drv" = "nono"
+if test "$enable_wineandroid_drv$enable_winecassia_drv$enable_winemac_drv" = "nono"
 then
     if test "x$X_LIBS" = "x"
 then :
@@ -20967,7 +20950,7 @@ test "$srcdir" = . || wine_srcdir="$srcdir/"
 
 ac_config_links="$ac_config_links wine:tools/winewrapper"
 wine_fn_config_symlink wine
-if test "$wine_binary" = wine64 -o -n "$with_wine64"; then
+if test "$HOST_ARCH" = x86_64 -o -n "$with_wine64"; then
 ac_config_links="$ac_config_links wine64:tools/winewrapper"
 wine_fn_config_symlink wine64
 fi
@@ -21800,6 +21783,7 @@ wine_fn_config_makefile dlls/windowscodecsext/tests enable_tests
 wine_fn_config_makefile dlls/winealsa.drv enable_winealsa_drv
 wine_fn_config_makefile dlls/wineandroid.drv enable_wineandroid_drv
 wine_fn_config_makefile dlls/winebus.sys enable_winebus_sys
+wine_fn_config_makefile dlls/winecassia.drv enable_winecassia_drv
 wine_fn_config_makefile dlls/winecoreaudio.drv enable_winecoreaudio_drv
 wine_fn_config_makefile dlls/winecrt0 enable_winecrt0
 wine_fn_config_makefile dlls/wined3d enable_wined3d
@@ -23085,6 +23069,8 @@ OBJC = $OBJC
 OBJCFLAGS = $OBJCFLAGS
 ac_ct_OBJC = $ac_ct_OBJC
 WINELOADER_DEPENDS = $WINELOADER_DEPENDS
+ADRENOTOOLS_CFLAGS = $ADRENOTOOLS_CFLAGS
+ADRENOTOOLS_LIBS = $ADRENOTOOLS_LIBS
 PE_ARCHS = $PE_ARCHS
 MINGW_PKG_CONFIG = $MINGW_PKG_CONFIG
 FAUDIO_PE_CFLAGS = $FAUDIO_PE_CFLAGS
