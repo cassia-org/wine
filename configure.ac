@@ -732,13 +732,10 @@ case $host_os in
     DLLFLAGS="$DLLFLAGS -fPIC"
     LDDLLFLAGS="-fPIC"
     LDEXECFLAGS="-Wl,-pie"
-    enable_wineandroid_drv=${enable_wineandroid_drv:-yes}
+    enable_winecassia_drv=${enable_winecassia_drv:-yes}
     WINE_TRY_CFLAGS([-Wl,-z,defs],[UNIXLDFLAGS="$UNIXLDFLAGS -Wl,-z,defs"])
     WINE_TRY_CFLAGS([-fPIC -Wl,--export-dynamic],[WINELOADER_LDFLAGS="-Wl,--export-dynamic"])
     WINEPRELOADER_LDFLAGS="-static -nostartfiles -nodefaultlibs -Wl,-Ttext=0x7d400000"
-
-    WINE_CHECK_SONAME(EGL,eglGetProcAddress)
-    WINE_CHECK_SONAME(GLESv2,glFlush)
 
     if test "x$exec_prefix" = xNONE
     then
@@ -801,6 +798,7 @@ esac
 
 enable_winecoreaudio_drv=${enable_winecoreaudio_drv:-no}
 enable_wineandroid_drv=${enable_wineandroid_drv:-no}
+enable_winecassia_drv=${enable_winecassia_drv:-no}
 enable_winemac_drv=${enable_winemac_drv:-no}
 
 dnl Check for cross compiler(s)
@@ -1333,7 +1331,7 @@ else
     X_LIBS=""
 fi
 
-if test "$enable_wineandroid_drv$enable_winemac_drv" = "nono"
+if test "$enable_wineandroid_drv$enable_winecassia_drv$enable_winemac_drv" = "nono"
 then
     WINE_ERROR_WITH(x,[test "x$X_LIBS" = "x"],
 [X ${notice_platform}development files not found. Wine will be built
@@ -3170,6 +3168,7 @@ WINE_CONFIG_MAKEFILE(dlls/windowscodecsext/tests)
 WINE_CONFIG_MAKEFILE(dlls/winealsa.drv)
 WINE_CONFIG_MAKEFILE(dlls/wineandroid.drv)
 WINE_CONFIG_MAKEFILE(dlls/winebus.sys)
+WINE_CONFIG_MAKEFILE(dlls/winecassia.drv)
 WINE_CONFIG_MAKEFILE(dlls/winecoreaudio.drv)
 WINE_CONFIG_MAKEFILE(dlls/winecrt0)
 WINE_CONFIG_MAKEFILE(dlls/wined3d)
