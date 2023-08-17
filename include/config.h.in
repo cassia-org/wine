@@ -6,6 +6,9 @@
 /* Define to the file extension for executables. */
 #undef EXEEXT
 
+/* Define to 1 if you have the <adrenotools/driver.h> header file. */
+#undef HAVE_ADRENOTOOLS_DRIVER_H
+
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #undef HAVE_ARPA_INET_H
 
