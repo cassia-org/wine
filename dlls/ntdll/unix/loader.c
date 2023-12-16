@@ -113,6 +113,7 @@ void *pKiRaiseUserExceptionDispatcher = NULL;
 void *pKiUserExceptionDispatcher = NULL;
 void *pKiUserApcDispatcher = NULL;
 void *pKiUserCallbackDispatcher = NULL;
+void *pKiUserEmulationDispatcher = NULL;
 void *pLdrInitializeThunk = NULL;
 void *pRtlUserThreadStart = NULL;
 void *p__wine_ctrl_routine = NULL;
@@ -1749,6 +1750,7 @@ static void load_ntdll_functions( HMODULE module )
     GET_FUNC( KiUserExceptionDispatcher );
     GET_FUNC( KiUserApcDispatcher );
     GET_FUNC( KiUserCallbackDispatcher );
+    GET_FUNC( KiUserEmulationDispatcher );
     GET_FUNC( LdrInitializeThunk );
     GET_FUNC( LdrSystemDllInitBlock );
     GET_FUNC( RtlUserThreadStart );
@@ -1845,6 +1847,7 @@ static void redirect_ntdll_functions( HMODULE module )
     REDIRECT( KiUserExceptionDispatcher );
     REDIRECT( KiUserApcDispatcher );
     REDIRECT( KiUserCallbackDispatcher );
+    REDIRECT( KiUserEmulationDispatcher );
     REDIRECT( LdrInitializeThunk );
     REDIRECT( RtlUserThreadStart );
 #undef REDIRECT
