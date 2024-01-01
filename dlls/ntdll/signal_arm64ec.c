@@ -211,7 +211,7 @@ static UINT fpcsr_to_mxcsr( UINT fpcr, UINT fpsr )
     return ret;
 }
 
-static void context_x64_to_arm( ARM64_NT_CONTEXT *arm_ctx, const CONTEXT *ctx )
+void context_x64_to_arm( ARM64_NT_CONTEXT *arm_ctx, const CONTEXT *ctx )
 {
     ARM64EC_NT_CONTEXT *ec_ctx = (ARM64EC_NT_CONTEXT *)ctx;
     UINT64 fpcsr;

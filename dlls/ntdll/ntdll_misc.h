@@ -202,6 +202,7 @@ struct arm64ec_callbacks {
 extern struct arm64ec_callbacks arm64ec_callbacks;
 
 const IMAGE_ARM64EC_METADATA *get_module_arm64ec_metadata( void *module );
+void context_x64_to_arm( ARM64_NT_CONTEXT *arm_ctx, const CONTEXT *ctx );
 
 #endif
 

@@ -272,6 +272,12 @@ static void process_unwind_codes( BYTE *ptr, BYTE *end, ARM64_NT_CONTEXT *contex
         {
             memcpy( context, (DWORD64 *)context->Sp, sizeof(ARM64_NT_CONTEXT) );
         }
+        else if (*ptr == 0xeb)  /* MSFT_OP_EC_CONTEXT */
+        {
+#ifdef __arm64ec__
+            context_x64_to_arm( context, (CONTEXT *)context->Sp );
+#endif
+        }
         else if (*ptr == 0xfc)  /* pac_sign_lr */
         {
             do_pac_auth( context );
