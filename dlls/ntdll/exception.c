@@ -2074,7 +2074,7 @@ NTSTATUS WINAPI dispatch_exception( EXCEPTION_RECORD *rec, CONTEXT *context ) {
     if (need_backtrace( rec->ExceptionCode ))
         WINE_BACKTRACE_LOG( "--- Exception %#x.\n", (int)rec->ExceptionCode )
 
-    TRACE_(seh)( "code=%lx flags=%lx addr=%p pp=%p\n",
+    TRACE_(seh)( "code=%lx flags=%lx addr=%p pc=%p\n",
                  rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress, (void *)CTX_REG_PC(context) );
     for (c = 0; c < min( EXCEPTION_MAXIMUM_PARAMETERS, rec->NumberParameters ); c++)
         TRACE_(seh)( " info[%ld]=%p\n", c, (void *)rec->ExceptionInformation[c] );
