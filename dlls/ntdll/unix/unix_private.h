@@ -38,7 +38,7 @@ static const WORD current_machine = IMAGE_FILE_MACHINE_AMD64;
 #elif defined(__arm__)
 static const WORD current_machine = IMAGE_FILE_MACHINE_ARMNT;
 #elif defined(__aarch64__)
-static const WORD current_machine = IMAGE_FILE_MACHINE_ARM64;
+static const WORD current_machine = IMAGE_FILE_MACHINE_AMD64;
 #endif
 extern WORD native_machine;
 
@@ -80,12 +80,6 @@ static inline BOOL is_wow64(void)
 static inline BOOL is_old_wow64(void)
 {
     return !is_win64 && wow_peb;
-}
-
-static inline BOOL is_arm64ec(void)
-{
-    return (current_machine == IMAGE_FILE_MACHINE_ARM64 &&
-            main_image_info.Machine == IMAGE_FILE_MACHINE_AMD64);
 }
 
 /* thread private data, stored in NtCurrentTeb()->GdiTebBatch */
@@ -403,6 +397,11 @@ static inline BOOL is_inside_syscall_stack_guard( const char *stack_ptr )
     const char *kernel_stack = ntdll_get_thread_data()->kernel_stack;
 
     return (stack_ptr >= kernel_stack && stack_ptr < kernel_stack + kernel_stack_guard_size);
+}
+
+static inline BOOL is_arm64ec(void)
+{
+    return TRUE;
 }
 
 static inline void mutex_lock( pthread_mutex_t *mutex )
