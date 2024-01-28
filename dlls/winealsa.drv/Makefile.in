@@ -3,6 +3,7 @@ UNIXLIB   = winealsa.so
 IMPORTS   = uuid ole32 advapi32
 DELAYIMPORTS = winmm
 UNIX_LIBS    = $(ALSA_LIBS) $(PTHREAD_LIBS)
+UNIX_CFLAGS = $(ALSA_CFLAGS)
 
 SOURCES = \
 	alsa.c \
