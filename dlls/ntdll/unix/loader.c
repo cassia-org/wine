@@ -360,6 +360,23 @@ static void * const syscalls[] =
     wine_unix_to_nt_file_name,
 };
 
+#ifdef __ANDROID__
+static int execv_wrap(const char *path, char *const argv[]) {
+    int argc = 0;
+    while (argv[argc] != NULL) argc++;
+
+    char *linker_argv[argc + 2];
+    linker_argv[0] = path;
+    for (int i = 0; i < argc; i++)
+        linker_argv[i + 1] = argv[i];
+    linker_argv[argc + 1] = NULL;
+
+    return execv("/system/bin/linker64", linker_argv);
+}
+
+#define execv execv_wrap
+#endif
+
 static BYTE syscall_args[ARRAY_SIZE(syscalls)];
 
 SYSTEM_SERVICE_TABLE KeServiceDescriptorTable[4];
