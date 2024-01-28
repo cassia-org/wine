@@ -84,7 +84,7 @@ static char *build_path( const char *dir, const char *name )
 
 static const char *get_self_exe( char *argv0 )
 {
-#if defined(__linux__) || defined(__FreeBSD_kernel__) || defined(__NetBSD__)
+#if (defined(__linux__) && !defined(__ANDROID__)) || defined(__FreeBSD_kernel__) || defined(__NetBSD__)
     return "/proc/self/exe";
 #elif defined (__FreeBSD__) || defined(__DragonFly__)
     static int pathname[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
