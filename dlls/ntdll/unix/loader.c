@@ -150,7 +150,7 @@ SYSTEM_SERVICE_TABLE KeServiceDescriptorTable[4] =
 static void fatal_error( const char *err, ... ) __attribute__((noreturn, format(printf,1,2)));
 #endif
 
-#if defined(linux) || defined(__APPLE__)
+#if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__)
 static const BOOL use_preloader = TRUE;
 #else
 static const BOOL use_preloader = FALSE;
