@@ -677,6 +677,7 @@ UDEV_LIBS
 UDEV_CFLAGS
 OSS4_LIBS
 OSS4_CFLAGS
+ALSA_CFLAGS
 ALSA_LIBS
 GSTREAMER_LIBS
 GSTREAMER_CFLAGS
@@ -1796,6 +1797,8 @@ PULSE_CFLAGS
 PULSE_LIBS
 GSTREAMER_CFLAGS
 GSTREAMER_LIBS
+ALSA_CFLAGS
+ALSA_LIBS
 UDEV_CFLAGS
 UDEV_LIBS
 UNWIND_CFLAGS
@@ -2627,6 +2630,8 @@ Some influential environment variables:
   GSTREAMER_LIBS
               Linker flags for gstreamer-1.0 gstreamer-video-1.0
               gstreamer-audio-1.0 gstreamer-tag-1.0, overriding pkg-config
+  ALSA_CFLAGS C compiler flags for alsa, overriding pkg-config
+  ALSA_LIBS   Linker flags for alsa, overriding pkg-config
   UDEV_CFLAGS C compiler flags for libudev, overriding pkg-config
   UDEV_LIBS   Linker flags for libudev, overriding pkg-config
   UNWIND_CFLAGS
@@ -10022,16 +10027,6 @@ fi
 
 CPPFLAGS=$ac_save_CPPFLAGS
 
-
-    if test "x$exec_prefix" = xNONE
-    then
-      case $host_cpu in
-        *i[3456]86*) exec_prefix='${prefix}/x86' ;;
-        *x86_64*)      exec_prefix='${prefix}/x86_64' ;;
-        *arm*)         exec_prefix='${prefix}/armeabi-v7a' ;;
-        *aarch64*)     exec_prefix='${prefix}/arm64-v8a' ;;
-      esac
-    fi
     ;;
 
   *)
@@ -17003,14 +16998,47 @@ ALSA_LIBS=""
 
 if test "x$with_alsa" != "xno"
 then
-    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for snd_pcm_hw_params_get_access_mask in -lasound" >&5
+    rm -f conftest.err
+if ${ALSA_CFLAGS:+false} :
+then :
+  if test ${PKG_CONFIG+y}
+then :
+  ALSA_CFLAGS=`$PKG_CONFIG --cflags alsa 2>conftest.err`
+fi
+fi
+
+if ${ALSA_LIBS:+false} :
+then :
+  if test ${PKG_CONFIG+y}
+then :
+  ALSA_LIBS=`$PKG_CONFIG --libs alsa 2>/dev/null`
+fi
+fi
+
+
+printf "%s\n" "$as_me:${as_lineno-$LINENO}: alsa cflags: $ALSA_CFLAGS" >&5
+printf "%s\n" "$as_me:${as_lineno-$LINENO}: alsa libs: $ALSA_LIBS" >&5
+if test -s conftest.err; then
+     printf %s "$as_me:${as_lineno-$LINENO}: alsa errors: " >&5
+     cat conftest.err >&5
+fi
+rm -f conftest.err
+ac_save_CPPFLAGS=$CPPFLAGS
+CPPFLAGS="$CPPFLAGS $ALSA_CFLAGS"
+       for ac_header in alsa/asoundlib.h
+do :
+  ac_fn_c_check_header_compile "$LINENO" "alsa/asoundlib.h" "ac_cv_header_alsa_asoundlib_h" "$ac_includes_default"
+if test "x$ac_cv_header_alsa_asoundlib_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_ALSA_ASOUNDLIB_H 1" >>confdefs.h
+ { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for snd_pcm_hw_params_get_access_mask in -lasound" >&5
 printf %s "checking for snd_pcm_hw_params_get_access_mask in -lasound... " >&6; }
 if test ${ac_cv_lib_asound_snd_pcm_hw_params_get_access_mask+y}
 then :
   printf %s "(cached) " >&6
 else $as_nop
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-lasound  $LIBS"
+LIBS="-lasound $ALSA_LIBS $LIBS"
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -17040,26 +17068,29 @@ fi
 printf "%s\n" "$ac_cv_lib_asound_snd_pcm_hw_params_get_access_mask" >&6; }
 if test "x$ac_cv_lib_asound_snd_pcm_hw_params_get_access_mask" = xyes
 then :
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-#include <alsa/asoundlib.h>
-int
-main (void)
-{
-snd_pcm_hw_params_get_access_mask(NULL, NULL)
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_compile "$LINENO"
-then :
-  ALSA_LIBS="-lasound"
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
+  :
+else $as_nop
+  ALSA_LIBS=""
 fi
 
+else $as_nop
+  ALSA_LIBS=""
 fi
-test -n "$ALSA_LIBS" || enable_winealsa_drv=${enable_winealsa_drv:-no}
+
+done
+CPPFLAGS=$ac_save_CPPFLAGS
+
+fi
+if test "x$ALSA_LIBS" = "x"
+then :
+  case "x$with_alsa" in
+  x)   as_fn_append wine_notices "|libasound ${notice_platform}development files not found, ALSA won't be supported." ;;
+  xno) ;;
+  *)   as_fn_error $? "libasound ${notice_platform}development files not found, ALSA won't be supported.
+This is an error since --with-alsa was requested." "$LINENO" 5 ;;
+esac
+enable_winealsa_drv=${enable_winealsa_drv:-no}
+fi
 
 if test "x$with_oss" != xno
 then
@@ -23138,6 +23169,7 @@ PULSE_LIBS = $PULSE_LIBS
 GSTREAMER_CFLAGS = $GSTREAMER_CFLAGS
 GSTREAMER_LIBS = $GSTREAMER_LIBS
 ALSA_LIBS = $ALSA_LIBS
+ALSA_CFLAGS = $ALSA_CFLAGS
 OSS4_CFLAGS = $OSS4_CFLAGS
 OSS4_LIBS = $OSS4_LIBS
 UDEV_CFLAGS = $UDEV_CFLAGS
