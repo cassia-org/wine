@@ -737,15 +737,9 @@ case $host_os in
     WINE_TRY_CFLAGS([-fPIC -Wl,--export-dynamic],[WINELOADER_LDFLAGS="-Wl,--export-dynamic"])
     WINEPRELOADER_LDFLAGS="-static -nostartfiles -nodefaultlibs -Wl,-Ttext=0x7d400000"
 
-    if test "x$exec_prefix" = xNONE
-    then
-      case $HOST_ARCH in
-        i386)    exec_prefix='${prefix}/x86' ;;
-        x86_64)  exec_prefix='${prefix}/x86_64' ;;
-        arm)     exec_prefix='${prefix}/armeabi-v7a' ;;
-        aarch64) exec_prefix='${prefix}/arm64-v8a' ;;
-      esac
-    fi
+    WINE_PACKAGE_FLAGS(ADRENOTOOLS,[adrenotools],,,,
+        [AC_CHECK_HEADERS([adrenotools/driver.h])
+         AC_CHECK_LIB(adrenotools,adrenotools_open_libvulkan,[:],[ADRENOTOOLS_LIBS=""],[$ADRENOTOOLS_LIBS])])
     ;;
 
   *)
