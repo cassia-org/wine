@@ -1829,6 +1829,24 @@ static int load_init_registry_from_file( const char *filename, struct key *key )
     return (f != NULL);
 }
 
+static int load_registry_from_file( const char *filename, struct key *key )
+{
+    FILE *f;
+
+    if ((f = fopen( filename, "r" )))
+    {
+        load_keys( key, filename, f, 0 );
+        fclose( f );
+        if (get_error() == STATUS_NOT_REGISTRY_FILE)
+        {
+            fprintf( stderr, "%s is not a valid registry file\n", filename );
+            return 1;
+        }
+    }
+
+    return (f != NULL);
+}
+
 static WCHAR *format_user_registry_path( const struct sid *sid, struct unicode_str *path )
 {
     char buffer[7 + 11 + 11 + 11 * ARRAY_SIZE(sid->sub_auth)], *p = buffer;
@@ -1964,6 +1982,9 @@ void init_registry(void)
         key->flags |= KEY_PREDEF;
         release_object( key );
     }
+
+    /* load runtime.reg into root */
+    load_registry_from_file( "runtime.reg", root_key );
 
     release_object( hklm );
     release_object( hkcu );
