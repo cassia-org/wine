@@ -240,7 +240,7 @@ static char *get_nls_dir(void)
     char *p, *dir, *ret;
     const char *nlsdir = BIN_TO_NLSDIR;
 
-#if defined(__linux__) || defined(__FreeBSD_kernel__) || defined(__NetBSD__)
+#if (defined(__linux__) && !defined(__ANDROID__)) || defined(__FreeBSD_kernel__) || defined(__NetBSD__)
     dir = realpath( "/proc/self/exe", NULL );
 #elif defined (__FreeBSD__) || defined(__DragonFly__)
     static int pathname[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };

@@ -656,7 +656,7 @@ static inline char *get_argv0_dir( const char *argv0 )
 #ifndef _WIN32
     char *dir = NULL;
 
-#if defined(__linux__) || defined(__FreeBSD_kernel__) || defined(__NetBSD__)
+#if (defined(__linux__) && !defined(__ANDROID__)) || defined(__FreeBSD_kernel__) || defined(__NetBSD__)
     dir = realpath( "/proc/self/exe", NULL );
 #elif defined (__FreeBSD__) || defined(__DragonFly__)
     static int pathname[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
