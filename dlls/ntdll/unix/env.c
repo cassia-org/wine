@@ -560,6 +560,38 @@ static void set_process_name( const char *name )
 {
     char *p;
 
+    {
+        char *args;
+        unsigned int len = 0;
+
+        for (unsigned int i = 0; i < main_argc; i++)
+        {
+            len += strlen(main_argv[i]) + 1;
+        }
+        args = malloc(len + 1);
+        for (unsigned int i = 0; i < main_argc; i++)
+        {
+            strcat(args, main_argv[i]);
+            if (i < main_argc - 1)
+                strcat(args, " ");
+        }
+
+        // Limit the length of the command line to 800 characters.
+        // This is to not exceed the maximum wine_dbg_printf length.
+        if (strlen(args) > 800)
+        {
+            args[800] = '.';
+            args[801] = '.';
+            args[802] = '.';
+            args[803] = '\0';
+        }
+
+        MESSAGE( "%04x:%04x:launch: '%s'\n", GetCurrentProcessId(),
+                GetCurrentThreadId(), args);
+
+        free(args);
+    }
+
 #ifdef HAVE_SETPROCTITLE
     setproctitle("-%s", name );
 #endif
