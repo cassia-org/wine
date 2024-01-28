@@ -94,6 +94,23 @@ extern char **environ;
 
 WINE_DEFAULT_DEBUG_CHANNEL(module);
 
+#ifdef __ANDROID__
+static int execv_wrap(const char *path, char *const argv[]) {
+    int argc = 0;
+    while (argv[argc] != NULL) argc++;
+
+    char *linker_argv[argc + 2];
+    linker_argv[0] = path;
+    for (int i = 0; i < argc; i++)
+        linker_argv[i + 1] = argv[i];
+    linker_argv[argc + 1] = NULL;
+
+    return execv("/system/bin/linker64", linker_argv);
+}
+
+#define execv execv_wrap
+#endif
+
 #ifdef __i386__
 static const char so_dir[] = "/i386-unix";
 #elif defined(__x86_64__)
