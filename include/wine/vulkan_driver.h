@@ -41,6 +41,7 @@ struct vulkan_funcs
 
     /* winevulkan specific functions */
     VkSurfaceKHR (*p_wine_get_host_surface)(VkSurfaceKHR);
+    void *(*p_wine_get_adrenotools_mapping_handle)(void);
 };
 
 static inline void *get_vulkan_driver_device_proc_addr(

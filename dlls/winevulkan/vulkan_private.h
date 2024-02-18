@@ -131,6 +131,10 @@ struct wine_phys_dev
 
     uint32_t external_memory_align;
 
+#ifdef __ANDROID__
+    VkBool32 adrenotools_memory_mapping;
+#endif
+
     struct wine_vk_mapping mapping;
 };
 
