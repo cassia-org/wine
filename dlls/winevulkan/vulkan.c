@@ -41,6 +41,9 @@
 #include "winioctl.h"
 #include "wine/server.h"
 #include "wine/list.h"
+#ifdef __ANDROID__
+#include <adrenotools/driver.h>
+#endif
 
 #include "vulkan_private.h"
 #include "wine/vulkan_driver.h"
@@ -402,7 +405,12 @@ static struct wine_phys_dev *wine_vk_physical_device_alloc(struct wine_instance 
             TRACE("Using VK_EXT_external_memory_host for memory mapping with alignment: %u\n",
                   object->external_memory_align);
     }
-
+#ifdef __ANDROID__
+    else if (use_external_memory() && adrenotools_validate_gpu_mapping(vk_funcs->p_wine_get_adrenotools_mapping_handle()))
+    {
+        object->adrenotools_memory_mapping = VK_TRUE;
+    }
+#endif
     free(host_properties);
     return object;
 
@@ -3040,6 +3048,9 @@ VkResult wine_vkAllocateMemory(VkDevice handle, const VkMemoryAllocateInfo *allo
     uint32_t mem_flags;
     void *mapping = NULL;
     VkResult result;
+#ifdef __ANDROID__
+    void *adrenotools_mapping_handle = NULL;
+#endif
 
     const VkImportMemoryWin32HandleInfoKHR *handle_import_info;
     const VkExportMemoryWin32HandleInfoKHR *handle_export_info;
@@ -3209,6 +3220,46 @@ VkResult wine_vkAllocateMemory(VkDevice handle, const VkMemoryAllocateInfo *allo
             info.allocationSize = (info.allocationSize + align) & ~align;
         }
     }
+#ifdef __ANDROID__
+    else if (device->phys_dev->adrenotools_memory_mapping && (mem_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+    {
+        SIZE_T alloc_size = info.allocationSize;
+        SIZE_T map_size;
+        static int once;
+
+        if (!once++)
+            FIXME("Using adrenotools memory mapping\n");
+
+        adrenotools_mapping_handle = vk_funcs->p_wine_get_adrenotools_mapping_handle();
+        if (!adrenotools_mem_gpu_allocate(adrenotools_mapping_handle, &alloc_size))
+        {
+            ERR("adrenotools_mem_gpu_allocate failed\n");
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        // Any further errors will leak GPU mapping but if we're OOM on the CPU we've got bigger problems
+
+        map_size = alloc_size;
+
+        if (NtAllocateVirtualMemory(GetCurrentProcess(), &mapping, zero_bits, &map_size,
+                                    MEM_COMMIT, PAGE_READWRITE))
+        {
+            ERR("NtAllocateVirtualMemory failed\n");
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+
+        if (map_size != alloc_size)
+            WARN("Overallocated virtual memory for adrenotools mapping");
+
+        // Map directly into the allocated virtual memory carveout
+         if (!adrenotools_mem_cpu_map(adrenotools_mapping_handle, mapping, alloc_size))
+        {
+            ERR("adrenotools_mem_cpu_map failed\n");
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+         // TODO: below may be necessary as some memory types take a diff path?
+         // info.memoryTypeIndex = 6;
+    }
+#endif
 
     result = device->funcs.p_vkAllocateMemory(device->host_device, &info, NULL, &memory->host_memory);
     if (result == VK_SUCCESS && memory->handle == INVALID_HANDLE_VALUE && export_info && export_info->handleTypes & VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT)
@@ -3248,6 +3299,14 @@ done:
         free(memory);
         return result;
     }
+
+#ifdef __ANDROID__
+    if (adrenotools_mapping_handle && !adrenotools_validate_gpu_mapping(adrenotools_mapping_handle))
+    {
+        ERR("adrenotools mapping failed!");
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+#endif
 
     memory->mapping = mapping;
     *ret = wine_device_memory_to_handle(memory);

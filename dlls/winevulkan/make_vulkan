@@ -3286,6 +3286,7 @@ class VkGenerator(object):
         f.write("\n")
         f.write("    /* winevulkan specific functions */\n")
         f.write("    VkSurfaceKHR (*p_wine_get_host_surface)(VkSurfaceKHR);\n")
+        f.write("    void *(*p_wine_get_adrenotools_mapping_handle)(void);\n")
         f.write("\n")
         f.write("    /* Optional. Returns TRUE if FS hack is active, otherwise returns FALSE. If\n")
         f.write("     * it returns TRUE, then real_sz will contain the actual display\n")

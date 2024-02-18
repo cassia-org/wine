@@ -123,6 +123,9 @@ static inline struct wine_vk_surface *surface_from_handle(VkSurfaceKHR handle)
 }
 
 static void *vulkan_handle;
+#ifdef __ANDROID__
+static void *adrenotools_mapping_handle;
+#endif
 
 static void wine_vk_init(void)
 {
@@ -1144,6 +1147,12 @@ static VkSurfaceKHR X11DRV_wine_get_host_surface( VkSurfaceKHR surface )
     return x11_surface->host_surface;
 }
 
+#ifdef __ANDROID__
+static void *X11DRV_wine_get_adrenotools_mapping_handle( void ) {
+    return adrenotools_mapping_handle;
+}
+#endif
+
 static VkBool32 X11DRV_query_fs_hack( VkSurfaceKHR surface, VkExtent2D *real_sz,
                                       VkExtent2D *user_sz, VkRect2D *dst_blit, VkFilter *filter )
 {
@@ -1266,6 +1275,9 @@ static const struct vulkan_funcs vulkan_funcs =
     X11DRV_vkQueuePresentKHR,
 
     X11DRV_wine_get_host_surface,
+#ifdef __ANDROID__
+    X11DRV_wine_get_adrenotools_mapping_handle
+#endif
     X11DRV_query_fs_hack,
 };
 
