@@ -726,9 +726,6 @@
 /* Define to the soname of the libdbus-1 library. */
 #undef SONAME_LIBDBUS_1
 
-/* Define to the soname of the libEGL library. */
-#undef SONAME_LIBEGL
-
 /* Define to the soname of the libfontconfig library. */
 #undef SONAME_LIBFONTCONFIG
 
@@ -737,9 +734,6 @@
 
 /* Define to the soname of the libGL library. */
 #undef SONAME_LIBGL
-
-/* Define to the soname of the libGLESv2 library. */
-#undef SONAME_LIBGLESV2
 
 /* Define to the soname of the libgnutls library. */
 #undef SONAME_LIBGNUTLS
