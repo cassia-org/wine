@@ -1345,7 +1345,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
     return TRUE;
 }
 
-#ifdef __x86_64__
+#if defined(__x86_64__) && !defined(__arm64ec__)
 
 static AGSReturnCode set_depth_bounds(AGSContext* context, ID3D11DeviceContext *dx_context, bool enabled,
         float min_depth, float max_depth)

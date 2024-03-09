@@ -34,6 +34,7 @@
 #include "wine/debug.h"
 #include "excpt.h"
 #include "ntdll_misc.h"
+#include "unixlib.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(seh);
 
@@ -2072,7 +2073,7 @@ NTSTATUS WINAPI dispatch_exception( EXCEPTION_RECORD *rec, CONTEXT *context ) {
     DWORD c;
 
     if (need_backtrace( rec->ExceptionCode ))
-        WINE_BACKTRACE_LOG( "--- Exception %#x.\n", (int)rec->ExceptionCode )
+        WINE_BACKTRACE_LOG( "--- Exception %#x.\n", (int)rec->ExceptionCode );
 
     TRACE_(seh)( "code=%lx flags=%lx addr=%p pc=%p\n",
                  rec->ExceptionCode, rec->ExceptionFlags, rec->ExceptionAddress, (void *)CTX_REG_PC(context) );
